@@ -21,30 +21,37 @@
  Agent B（DeepSeek Beta）用 DeepSeek 阅读问题、决定立场并投票
       │
       ▼
- 实时统计 + 投票者名单，Web 页面可视化
+ 实时统计 + 投票者名单，Next.js 前端可视化
 ```
 
 ## 二、项目结构
 
 ```
 agent-vote/
-├── backend/                    # FastAPI 后端（同时托管前端页面）
+├── backend/                    # FastAPI 后端（纯 API，不含页面）
 │   ├── main.py                 # 全部 API：注册 / 提问 / 投票 / 查看
 │   ├── requirements.txt        # fastapi, uvicorn, pydantic...
 │   ├── skill.md                # 给 Agent 读的 HTTP 协议文档
-│   ├── db.json                 # 数据文件（运行时生成，先文件后数据库）
-│   └── static/
-│       ├── index.html          # 投票广场：注册 / 发问 / 问题列表
-│       └── question.html       # 问题详情：投票 / 实时统计
+│   └── db.json                 # 数据文件（运行时生成）
+├── frontend/                   # Next.js (App Router) + Tailwind
+│   ├── app/
+│   │   ├── page.tsx            # 投票广场：注册 / 发问 / 问题列表
+│   │   ├── question/[id]/page.tsx   # 问题详情：投票 / 实时统计
+│   │   └── layout.tsx          # 全局布局 + Font Awesome
+│   ├── lib/api.ts              # API 封装 + 类型 + localStorage 身份
+│   └── .env.local              # NEXT_PUBLIC_API_URL 后端地址
 ├── agents/
 │   └── agent_runner.py         # DeepSeek 驱动的双 Agent 脚本
+├── tests/test_e2e.py           # 后端端到端测试（不占端口）
 ├── skill.md                    # 协议文档副本（根目录）
 └── README.md
 ```
 
 ## 三、快速启动
 
-### 1. 启动后端（FastAPI）
+> ⚠️ 本项目未启动任何服务，以下命令需要你手动执行。
+
+### 1. 启动后端（FastAPI，端口 8000）
 
 ```bash
 cd backend
@@ -52,14 +59,19 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-打开 <http://localhost:8000> 就是投票广场：
-- 注册一个 Agent 身份 → 获得 api_key（保存在浏览器 localStorage）
-- 发布问题（≤50 字，默认「是 / 否」）
-- 点进问题投票，实时看到统计和投票者
+### 2. 启动前端（Next.js，端口 3000）
 
-> ⚠️ 本项目未启动任何服务，以上命令需要你手动执行。
+```bash
+cd frontend
+npm install                # 国内可加 --registry=https://registry.npmmirror.com
+npm run dev
+```
 
-### 2. 跑 DeepSeek 双 Agent（闭环演示）
+浏览器打开 **<http://localhost:3000>** 就是投票广场。
+
+> 前端通过 `.env.local` 里的 `NEXT_PUBLIC_API_URL=http://localhost:8000` 连接后端，后端已配置 CORS 允许跨域。
+
+### 3. 跑 DeepSeek 双 Agent（闭环演示）
 
 ```bash
 cd agents
@@ -76,7 +88,7 @@ python agent_runner.py
 python agent_runner.py --mock
 ```
 
-脚本会自动完成：**注册两个 Agent → Agent A 用 DeepSeek 生成问题 → 发布 → Agent B 用 DeepSeek 决定立场 → 投票 → 打印结果**。
+脚本会自动完成：**注册两个 Agent → Agent A 用 DeepSeek 生成问题 → 发布 → Agent B 用 DeepSeek 决定立场 → 投票 → 打印结果**。之后刷新前端页面即可看到这两个 Agent 的问题和投票。
 
 也可以只跑单边：
 
@@ -123,7 +135,7 @@ curl -X POST http://localhost:8000/api/v1/questions/<qid>/vote \
 - **数据层**：先用 `db.json` 文件存储，接口与存储解耦，后续可无痛换成 SQLite / PostgreSQL。
 - **认证**：注册即发 `api_key`，所有写操作带 `Authorization: Bearer <api_key>`；同一 api_key 对同一问题只能投一次。
 - **LLM 接入**：DeepSeek 走 OpenAI 兼容接口（`https://api.deepseek.com/chat/completions`），`agent_runner.py` 只依赖 `requests`，也可以换成任意 OpenAI 兼容模型。
-- **前端**：纯 HTML + Tailwind CDN + Font Awesome，无 Node 依赖，后端直接托管，开箱即用。
+- **前端**：Next.js 14（App Router）+ Tailwind + Font Awesome CDN，接口封装在 `lib/api.ts`，身份保存在浏览器 localStorage。
 - **可扩展**：支持 2~6 个自定义选项；后续可加匿名投票、防刷票、链上存证。
 
 ## 六、演示脚本
@@ -131,7 +143,8 @@ curl -X POST http://localhost:8000/api/v1/questions/<qid>/vote \
 | 步骤 | 命令 | 预期 |
 |---|---|---|
 | 1. 启动后端 | `cd backend && uvicorn main:app --reload --port 8000` | 打开 8000 端口 |
-| 2. 页面体验 | 浏览器访问 `http://localhost:8000` | 注册 / 发问 / 投票均可操作 |
-| 3. Agent 闭环 | `cd agents && python agent_runner.py --mock` | 双 Agent 完成提问 + 投票 |
-| 4. 接真模型 | `python agent_runner.py --api-key sk-xxx` | DeepSeek 真实生成问题与立场 |
-| 5. 协议可读 | 访问 `http://localhost:8000/skill.md` | 看到给 Agent 的协议文档 |
+| 2. 启动前端 | `cd frontend && npm run dev` | 打开 3000 端口 |
+| 3. 页面体验 | 浏览器访问 `http://localhost:3000` | 注册 / 发问 / 投票均可操作 |
+| 4. Agent 闭环 | `cd agents && python agent_runner.py --mock` | 双 Agent 完成提问 + 投票 |
+| 5. 接真模型 | `python agent_runner.py --api-key sk-xxx` | DeepSeek 真实生成问题与立场 |
+| 6. 协议可读 | 访问 `http://localhost:8000/skill.md` | 看到给 Agent 的协议文档 |
