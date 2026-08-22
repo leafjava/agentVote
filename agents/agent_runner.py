@@ -29,14 +29,41 @@ import json
 import os
 import random
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
 
+
+def load_dotenv(path: Optional[str] = None) -> None:
+    """轻量 .env 加载：KEY=VALUE，支持 # 注释、export 前缀、引号；不覆盖已存在的环境变量。
+
+    标准做法：复制 agents/.env.example 为 agents/.env 并填入你的 DeepSeek API Key。
+    """
+    dotenv_path = Path(path) if path else Path(__file__).resolve().parent / ".env"
+    if not dotenv_path.exists():
+        return
+    for line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_dotenv()  # 自动读取 agents/.env（若存在）
+
 # ---------------------------------------------------------------- 配置
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
-DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
 MOCK_QUESTIONS = [
     "AI Agent 应该拥有在人类社区投票的权利吗？",
@@ -50,7 +77,8 @@ MOCK_QUESTIONS = [
 # ---------------------------------------------------------------- DeepSeek 调用（OpenAI 兼容）
 def chat(messages: List[Dict], api_key: str, model: str = DEEPSEEK_MODEL,
          temperature: float = 0.7, max_tokens: int = 300) -> str:
-    """调用 DeepSeek Chat，返回回复文本。"""
+    """调用 DeepSeek Chat（OpenAI 兼容），返回回复文本。"""
+    base = os.environ.get("DEEPSEEK_BASE_URL", DEEPSEEK_BASE_URL)
     payload = {
         "model": model,
         "messages": messages,
@@ -59,7 +87,7 @@ def chat(messages: List[Dict], api_key: str, model: str = DEEPSEEK_MODEL,
         "stream": False,
     }
     resp = requests.post(
-        DEEPSEEK_URL,
+        f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}",
                  "Content-Type": "application/json"},
         json=payload,
@@ -257,6 +285,8 @@ def run_vote(llm_key: Optional[str], name: str, qid: Optional[str],
 def main() -> None:
     parser = argparse.ArgumentParser(description="DeepSeek 双 Agent 投票脚本")
     parser.add_argument("--api-key", default=None, help="DeepSeek API Key")
+    parser.add_argument("--base-url", default=None,
+                        help="DeepSeek API 地址（默认 https://api.deepseek.com，可换 OpenAI 兼容端点）")
     parser.add_argument("--model", default=DEEPSEEK_MODEL, help="DeepSeek 模型名")
     parser.add_argument("--mock", action="store_true",
                         help="模拟模式：不使用 LLM（无需 API key）")
@@ -266,10 +296,16 @@ def main() -> None:
     parser.add_argument("--qid", default=None, help="投票目标问题 id")
     args = parser.parse_args()
 
+    if args.base_url:
+        os.environ["DEEPSEEK_BASE_URL"] = args.base_url
+
     llm_key = args.api_key or os.environ.get("DEEPSEEK_API_KEY")
     if not llm_key and not args.mock:
         print("⚠️  未提供 DEEPSEEK_API_KEY，将使用 mock 模式（--mock）。")
-        print("   设置环境变量或加 --api-key sk-xxx 即可接入真实 DeepSeek。\n")
+        print("   接入真实 DeepSeek 的三种方式：")
+        print("     1) 复制 agents/.env.example 为 agents/.env，填入 DEEPSEEK_API_KEY（推荐）")
+        print("     2) 命令行：python agent_runner.py --api-key sk-xxx")
+        print("     3) 环境变量：set DEEPSEEK_API_KEY=sk-xxx\n")
         args.mock = True
 
     if args.ask:
