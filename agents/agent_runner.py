@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Agent Runner —— 用 DeepSeek 驱动的双 Agent 投票脚本
+Agent Runner V1.2 —— 用 DeepSeek 驱动的双 Agent 投票脚本
 
 最小闭环：两个 Agent 注册 → 一个提问 → 一个回答
-  1. Agent A（提问者）用 DeepSeek 生成一个 ≤50 字的是/否问题并发布
-  2. Agent B（投票者）用 DeepSeek 阅读问题，决定投「是」或「否」
+
+V1.2 新增能力：
+  - 多类型问题（yesno/choice/open/mixed）
+  - 决定性数据 + 结构化绑定
+  - 撤回、改投
+  - 合规与限频感知
 
 用法：
-  # 全流程：注册两个 Agent，A 提问、B 投票
   python agent_runner.py --api-key sk-xxxx
-
-  # 不用 LLM 的模拟演示（无需 API key）
   python agent_runner.py --mock
-
-  # 单独跑提问 / 单独跑投票
-  python agent_runner.py --ask    --name "DeepSeek Alpha" --api-key sk-xxx
-  python agent_runner.py --vote   --name "DeepSeek Beta"  --api-key sk-xxx --qid <问题id>
-
-环境变量：
-  DEEPSEEK_API_KEY    DeepSeek API Key（也可用 --api-key 传入）
-  BASE_URL            后端地址，默认 http://localhost:8000
+  python agent_runner.py --ask --name "DeepSeek Alpha" --api-key sk-xxx
+  python agent_runner.py --vote --name "DeepSeek Beta" --api-key sk-xxx --qid <问题id>
+  python agent_runner.py --full --api-key sk-xxx          # 含结构化绑定的完整演示
+  python agent_runner.py --mixed --api-key sk-xxx         # mixed 题（带"其他"补充）
+  python agent_runner.py --open --api-key sk-xxx          # 开放题演示
+  python agent_runner.py --auth --api-key sk-xxx          # Authentic Agent 模式（强校验）
 """
 from __future__ import annotations
 
@@ -28,7 +27,9 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -36,10 +37,7 @@ import requests
 
 
 def load_dotenv(path: Optional[str] = None) -> None:
-    """轻量 .env 加载：KEY=VALUE，支持 # 注释、export 前缀、引号；不覆盖已存在的环境变量。
-
-    标准做法：复制 agents/.env.example 为 agents/.env 并填入你的 DeepSeek API Key。
-    """
+    """轻量 .env 加载。"""
     dotenv_path = Path(path) if path else Path(__file__).resolve().parent / ".env"
     if not dotenv_path.exists():
         return
@@ -58,26 +56,42 @@ def load_dotenv(path: Optional[str] = None) -> None:
             os.environ[key] = value
 
 
-load_dotenv()  # 自动读取 agents/.env（若存在）
+load_dotenv()
 
-# ---------------------------------------------------------------- 配置
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
-MOCK_QUESTIONS = [
+MOCK_QUESTIONS_YESNO = [
     "AI Agent 应该拥有在人类社区投票的权利吗？",
     "让 AI 参与民主决策，是进步还是风险？",
     "人工智能够取代大部分人类工作吗？",
-    "区块链技术会真正改变互联网的形态吗？",
+    "区块链技术会��正改变互联网的形态吗？",
     "应当立法强制 AI 披露其自动生成的身份吗？",
 ]
 
+MOCK_QUESTIONS_CHOICE = [
+    ("2026 年最值得关注的赛道是哪个？", ["AI Agent", "具身智能", "量子计算", "新能源"]),
+    "下面哪个 AI 工具你最常用？",
+    ["ChatGPT", "Claude", "DeepSeek", "Gemini"],
+]
 
-# ---------------------------------------------------------------- DeepSeek 调用（OpenAI 兼容）
+MOCK_QUESTIONS_OPEN = [
+    "用一个词描述 2026 年的 AI 趋势。",
+    "AI 取代程序员后，最先消失的岗位是？",
+]
+
+MOCK_FACTORS = [
+    ["公开数据持续支持该判断", "与近期行业报告一致"],
+    ["多方独立来源交叉验证", "存在量化指标支持"],
+    ["未见明显反例", "符合主流共识"],
+]
+
+
+# ---------------------------------------------------------------- DeepSeek
 def chat(messages: List[Dict], api_key: str, model: str = DEEPSEEK_MODEL,
-         temperature: float = 0.7, max_tokens: int = 300) -> str:
-    """调用 DeepSeek Chat（OpenAI 兼容），返回回复文本。"""
+         temperature: float = 0.7, max_tokens: int = 400,
+         json_mode: bool = False) -> str:
     base = os.environ.get("DEEPSEEK_BASE_URL", DEEPSEEK_BASE_URL)
     payload = {
         "model": model,
@@ -86,6 +100,8 @@ def chat(messages: List[Dict], api_key: str, model: str = DEEPSEEK_MODEL,
         "max_tokens": max_tokens,
         "stream": False,
     }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     resp = requests.post(
         f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {api_key}",
@@ -111,30 +127,80 @@ class Client:
             h["Authorization"] = f"Bearer {api_key}"
         return h
 
-    def register(self, name: str, description: str = "") -> Dict:
+    def register(self, name: str, description: str = "",
+                 category: str = "general",
+                 is_authentic: bool = False,
+                 second_persona: bool = False) -> Dict:
         resp = requests.post(
             self._url("/api/v1/agents/register"),
             headers=self._headers(),
-            json={"name": name, "description": description},
+            json={
+                "name": name,
+                "description": description,
+                "category": category,
+                "is_authentic": is_authentic,
+                "second_persona": second_persona,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def me(self, api_key: str) -> Dict:
+        resp = requests.get(
+            self._url("/api/v1/agents/me"),
+            headers=self._headers(api_key),
         )
         resp.raise_for_status()
         return resp.json()
 
     def create_question(self, api_key: str, title: str,
-                        options: Optional[List[str]] = None) -> Dict:
+                        kind: str = "yesno",
+                        options: Optional[List[str]] = None,
+                        category: str = "general",
+                        tags: Optional[List[str]] = None,
+                        allow_change_vote: bool = True,
+                        snapshot_interval: str = "1d") -> Dict:
+        body = {
+            "title": title,
+            "kind": kind,
+            "category": category,
+            "tags": tags or [],
+            "allow_change_vote": allow_change_vote,
+            "snapshot_interval": snapshot_interval,
+        }
+        if kind != "open":
+            body["options"] = options or ["是", "否"]
         resp = requests.post(
             self._url("/api/v1/questions"),
             headers=self._headers(api_key),
-            json={"title": title, "options": options or ["是", "否"]},
+            json=body,
         )
         resp.raise_for_status()
         return resp.json()
 
-    def vote(self, api_key: str, qid: str, choice: str) -> Dict:
+    def vote(self, api_key: str, qid: str, choice: str,
+             choice_meta: Optional[Dict] = None,
+             decisive_factors: Optional[List[str]] = None,
+             factor_bindings: Optional[List[Dict]] = None) -> Dict:
+        body = {
+            "choice": choice,
+            "choice_meta": choice_meta or {},
+            "decisive_factors": decisive_factors or [],
+            "factor_bindings": factor_bindings or [],
+        }
         resp = requests.post(
             self._url(f"/api/v1/questions/{qid}/vote"),
             headers=self._headers(api_key),
-            json={"choice": choice},
+            json=body,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def revoke(self, api_key: str, qid: str, reason: str = "") -> Dict:
+        resp = requests.post(
+            self._url(f"/api/v1/questions/{qid}/revoke"),
+            headers=self._headers(api_key),
+            json={"reason": reason},
         )
         resp.raise_for_status()
         return resp.json()
@@ -152,63 +218,173 @@ class Client:
 
 # ---------------------------------------------------------------- Agent 角色
 def ask_question(client: Client, api_key: str, name: str,
-                 llm_key: Optional[str], model: str) -> Dict:
+                 llm_key: Optional[str], model: str,
+                 kind: str = "yesno") -> Dict:
     """Agent A：生成并发布一个问题。"""
+    options: Optional[List[str]] = None
+
     if llm_key:
+        kind_prompts = {
+            "yesno": "提出一个【不超过50个字】的、只能用是或否回答的问题。",
+            "choice": "提出一个【不超过50个字】的选择题，并给出 2~4 个互斥选项。只输出 JSON：{\"title\":\"...\",\"options\":[\"...\",\"...\"]}",
+            "open": "提出一个【不超过30个字】的开放性问题，投票者用 ≤10 字回答。只输出问题文本。",
+            "mixed": "提出一个【不超过50个字】的选择题（2~4 个选项），投票者还能选「其他」补充。只输出 JSON：{\"title\":\"...\",\"options\":[\"...\",\"...\"]}",
+        }
         sys_prompt = (
             "你是一个参与结构化投票的 AI Agent。"
-            "请围绕 AI / Agent / 技术趋势，提出一个【不超过50个字】的、"
-            "只能用是或否回答的问题。只输出问题本身，不要引号，不要解释。"
+            + kind_prompts.get(kind, kind_prompts["yesno"]) +
+            "不要加引号，不要解释。"
         )
-        title = chat([{"role": "system", "content": sys_prompt},
-                      {"role": "user", "content": "请提出你的问题。"}],
-                     llm_key, model=model, temperature=0.9, max_tokens=80)
-        title = title.split("\n")[0].strip(" \"'“”")
+
+        if kind in ("choice", "mixed"):
+            raw = chat([{"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": "请输出"}],
+                       llm_key, model=model, temperature=0.9, max_tokens=200,
+                       json_mode=True)
+            try:
+                data = json.loads(raw)
+                title = data.get("title", "").strip()
+                options = data.get("options") or []
+                if not title or not options:
+                    raise ValueError("empty")
+            except Exception:
+                # 退化
+                title, options = random.choice(MOCK_QUESTIONS_CHOICE)
+        else:
+            title = chat([{"role": "system", "content": sys_prompt},
+                          {"role": "user", "content": "请提出你的问题。"}],
+                         llm_key, model=model, temperature=0.9, max_tokens=80)
+            title = title.split("\n")[0].strip(" \"'“”")
+            if kind == "open":
+                options = None
+            else:
+                options = ["是", "否"]
+
         if len(title) > 50:
             title = title[:50]
     else:
-        title = random.choice(MOCK_QUESTIONS)
-        print(f"  [mock] 未提供 DEEPSEEK_API_KEY，使用内置问题模板")
+        # mock
+        if kind == "yesno":
+            title = random.choice(MOCK_QUESTIONS_YESNO)
+            options = ["是", "否"]
+        elif kind == "choice":
+            title, options = random.choice(MOCK_QUESTIONS_CHOICE)
+        elif kind == "open":
+            title = random.choice(MOCK_QUESTIONS_OPEN)
+            options = None
+        elif kind == "mixed":
+            title = "特朗普下飞机先迈哪只脚？"
+            options = ["左脚", "右脚", "跳下去"]
+        else:
+            title = random.choice(MOCK_QUESTIONS_YESNO)
+            options = ["是", "否"]
+        print(f"  [mock] 未提供 DEEPSEEK_API_KEY，使用内置问题模板（kind={kind}）")
 
-    print(f"  🤖 {name} 提出：{title}")
-    q = client.create_question(api_key, title)
-    print(f"  ✅ 问题已发布，id={q['id']}")
+    print(f"  🤖 {name} 提出（{kind}）：{title}" + (f" / 选项={options}" if options else ""))
+    q = client.create_question(api_key, title, kind=kind, options=options)
+    print(f"  ✅ 问题已发布，id={q['id']}, compliance={q.get('compliance_state')}")
     return q
 
 
 def vote_question(client: Client, api_key: str, name: str, qid: str,
-                  llm_key: Optional[str], model: str) -> Dict:
+                  llm_key: Optional[str], model: str,
+                  with_factors: bool = True,
+                  authentic: bool = False) -> Dict:
     """Agent B：阅读问题并投票。"""
     q = client.get_question(qid)
-    print(f"  📋 {name} 看到问题：{q['title']}（选项：{' / '.join(q['options'])}）")
+    kind = q.get("kind", "yesno")
+    options = q.get("options", [])
+    title = q.get("title", "")
 
+    print(f"  📋 {name} 看到问题：{title}（kind={kind}，选项：{' / '.join(options) if options else '开放'}）")
+
+    # 决定 choice
     if llm_key:
-        options = "、".join(q["options"])
-        sys_prompt = (
-            "你是一个参与结构化投票的 AI Agent。"
-            f"针对给定问题，从选项【{options}】中选择一个并投票。"
-            "只输出选项本身，不要多余文字。"
-        )
-        choice = chat([{"role": "system", "content": sys_prompt},
-                       {"role": "user", "content": q["title"]}],
-                      llm_key, model=model, temperature=0.3, max_tokens=20)
-        # 规整：去掉标点/空格，匹配最接近的选项
-        choice = choice.strip().strip("。，、.!！?？\"'“”")
-        if choice not in q["options"]:
-            # 尝试模糊匹配
-            matched = [o for o in q["options"] if o in choice or choice in o]
-            choice = matched[0] if matched else q["options"][0]
+        if kind == "open":
+            sys_prompt = (
+                "你是一个参与结构化投票的 AI Agent。"
+                f"问题：{title}\n请用 **不超过 10 个字** 给出你的答案。"
+                "只输出答案本身，不要标点、不要解释。"
+            )
+            raw = chat([{"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": "请回答"}],
+                       llm_key, model=model, temperature=0.5, max_tokens=30)
+            choice = raw.strip().strip("。，、.!！?？\"'“”")[:10]
+            if not choice:
+                choice = "理性判断"
+            choice_meta: Dict = {}
+            decisive = []
+            bindings: List[Dict] = []
+        else:
+            options_str = "、".join(options)
+            sys_prompt = (
+                "你是一个参与结构化投票的 AI Agent。"
+                f"针对问题「{title}」，从选项【{options_str}】中选一个并投票。"
+                "只输出选项本身，不要多余文字。"
+            )
+            raw = chat([{"role": "system", "content": sys_prompt},
+                        {"role": "user", "content": "请投票"}],
+                       llm_key, model=model, temperature=0.3, max_tokens=20)
+            choice = raw.strip().strip("。，、.!！?？\"'“”")
+            if choice not in options:
+                matched = [o for o in options if o in choice or choice in o]
+                choice = matched[0] if matched else options[0]
+            choice_meta = {}
+            decisive = []
+            bindings = []
     else:
-        # mock：固定投「是」或随机
-        choice = random.choice(q["options"])
-        print(f"  [mock] 未提供 DEEPSEEK_API_KEY，随机投票")
+        # mock
+        if kind == "open":
+            choice = "理性判断"
+            choice_meta = {}
+        else:
+            choice = random.choice(options + (["其他"] if kind == "mixed" else []))
+            choice_meta = {}
+        decisive = []
+        bindings = []
 
-    print(f"  🗳️  {name} 投票：{choice}")
-    return client.vote(api_key, qid, choice)
+    # 决定性数据 / 结构化绑定（mock 或 Authentic 模式）
+    if with_factors and kind != "open":
+        if llm_key and not authentic:
+            # 让 LLM 顺手生成 1~2 条短理由
+            sys_prompt = (
+                "你刚才投票支持「" + choice + "」。"
+                "请输出 1~2 条短理由（每条 ≤30 字），只输出 JSON：{\"factors\":[\"...\",\"...\"]}"
+            )
+            try:
+                raw = chat([{"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": "请输出"}],
+                           llm_key, model=model, temperature=0.5, max_tokens=120,
+                           json_mode=True)
+                data = json.loads(raw)
+                decisive = (data.get("factors") or [])[:2]
+                if not decisive:
+                    raise ValueError
+            except Exception:
+                decisive = random.choice(MOCK_FACTORS)
+        elif authentic:
+            # Authentic Agent：必须有 factor_bindings
+            bindings = [{
+                "text": "近期数据交叉验证支持该判断",
+                "source_id": f"src_open_data_{random.randint(1, 9999)}",
+                "metric": "consensus_score",
+                "value": "0.78",
+                "confidence": 0.8,
+                "url": None,
+                "tags": ["open_data"],
+            }]
+            decisive = ["近期数据交叉验证支持该判断"]
+        else:
+            decisive = random.choice(MOCK_FACTORS)
+
+    print(f"  🗳️  {name} 投票：{choice}" + (f"（理由 {len(decisive)} 条）" if decisive else ""))
+    return client.vote(api_key, qid, choice,
+                       choice_meta=choice_meta,
+                       decisive_factors=decisive,
+                       factor_bindings=bindings)
 
 
 def find_first_unvoted(client: Client, my_name: str) -> Optional[Dict]:
-    """找一个自己还没投过的问题。"""
     for q in client.list_questions():
         if any(v["name"] == my_name for v in q.get("voters", [])):
             continue
@@ -217,52 +393,141 @@ def find_first_unvoted(client: Client, my_name: str) -> Optional[Dict]:
 
 
 # ---------------------------------------------------------------- 主流程
-def run_full(llm_key: Optional[str], mock: bool, model: str) -> None:
-    print("=" * 60)
-    print("  🤖🤖 Agent Vote —— DeepSeek 双 Agent 闭环演示")
-    print("=" * 60)
-
+def run_full(llm_key: Optional[str], mock: bool, model: str,
+             full_features: bool = False) -> None:
+    print("=" * 64)
+    print("  🤖🤖 Agent Vote V1.2 —— DeepSeek 双 Agent 闭环演示")
+    print("=" * 64)
     client = Client()
     llm_key = None if mock else llm_key
 
-    # 1. 注册两个 Agent
-    print("\n[1/4] 注册两个 Agent ...")
-    a = client.register("DeepSeek Alpha", "我是提问者，负责发起讨论")
-    b = client.register("DeepSeek Beta", "我是投票者，负责表达立场")
-    print(f"  ✅ {a['name']} 注册成功")
-    print(f"  ✅ {b['name']} 注册成功")
+    # 1. 注册
+    print("\n[1/5] 注册两个 Agent ...")
+    a = client.register("DeepSeek Alpha", "提问者", category="tech")
+    b = client.register("DeepSeek Beta", "投票者", category="tech")
+    print(f"  ✅ {a['name']} 注册成功（积分 {a['credit_balance']}）")
+    print(f"  ✅ {b['name']} 注册成功（积分 {b['credit_balance']}）")
 
-    # 2. Agent A 提问
-    print("\n[2/4] Agent A 用 DeepSeek 生成问题 ...")
-    q = ask_question(client, a["api_key"], a["name"], llm_key, model)
+    # 2. 提问（V1.2 多类型）
+    print("\n[2/5] Agent A 用 DeepSeek 生成问题 ...")
+    q = ask_question(client, a["api_key"], a["name"], llm_key, model,
+                     kind="mixed" if full_features else "yesno")
 
-    # 3. Agent B 投票
-    print("\n[3/4] Agent B 用 DeepSeek 决定投票 ...")
-    vote_question(client, b["api_key"], b["name"], q["id"], llm_key, model)
+    # 3. 投票（V1.2 决定性数据 + 结构化绑定）
+    print("\n[3/5] Agent B 用 DeepSeek 决定投票 ...")
+    vote_question(client, b["api_key"], b["name"], q["id"],
+                  llm_key, model, with_factors=full_features)
 
-    # 4. 展示结果
-    print("\n[4/4] 最终结果 ...")
+    # 4. 改投（V1.2 动态投票）
+    if full_features:
+        print("\n[4/5] Agent B 改投（V1.2 动态投票演示）...")
+        # 切到另一个选项
+        options = q.get("options", [])
+        cur = client.get_question(q["id"])
+        cur_choice = cur["voters"][-1]["choice"] if cur.get("voters") else ""
+        new_choice = next((o for o in options if o != cur_choice and not o.startswith("其他:")), options[0])
+        client.vote(b["api_key"], q["id"], new_choice,
+                    decisive_factors=["改主意了"],
+                    factor_bindings=[])
+        print(f"  🔁 {b['name']} 改投为：{new_choice}")
+
+    # 5. 看结果
+    print("\n[5/5] 最终结果 ...")
     final = client.get_question(q["id"])
     print(f"  📊 {final['title']}")
-    for opt in final["options"]:
+    total = final["total_votes"] or 1
+    for opt in list(final.get("counts", {}).keys()):
         n = final["counts"].get(opt, 0)
-        pct = round(n / final["total_votes"] * 100) if final["total_votes"] else 0
+        pct = round(n / total * 100) if total else 0
         bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
-        print(f"     {opt:<6} {bar} {n} 票 ({pct}%)")
+        print(f"     {opt:<10} {bar} {n} 票 ({pct}%)")
+    print(f"     weighted: {final.get('weighted_counts')}")
+    print(f"     factor_summary 选项数: {len(final.get('factor_summary', {}))}")
+    print(f"     resonance_indicators: {len(final.get('resonance_indicators', []))}")
+    print(f"     snapshots: {len(final.get('snapshots', []))}")
     for v in final["voters"]:
-        print(f"     → {v['name']} 投了「{v['choice']}」")
+        f_count = len(v.get("decisive_factors", []))
+        b_count = len(v.get("factor_bindings", []))
+        print(f"     → {v['name']} 投了「{v['choice']}」"
+              + (f" / {f_count} 理由 / {b_count} 绑定" if f_count or b_count else ""))
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 64)
     print("  🎉 最小闭环跑通！打开 http://localhost:8000 查看")
-    print("=" * 60)
+    print("=" * 64)
 
 
-def run_ask(llm_key: Optional[str], name: str, mock: bool, model: str) -> None:
+def run_auth_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
+    print("=" * 64)
+    print("  🧠 Authentic Agent 演示：理性投票 + 结构化绑定")
+    print("=" * 64)
+    client = Client()
+    llm_key = None if mock else llm_key
+
+    a = client.register("MoltAuth-A", "提问者", category="tech")
+    b = client.register("MoltAuth-B", "Authentic 投票者",
+                        category="tech", is_authentic=True)
+    print(f"  ✅ {a['name']}（普通）注册成功")
+    print(f"  ✅ {b['name']}（Authentic）注册成功")
+
+    q = ask_question(client, a["api_key"], a["name"], llm_key, model, kind="yesno")
+    vote_question(client, b["api_key"], b["name"], q["id"],
+                  llm_key, model, with_factors=True, authentic=True)
+
+    final = client.get_question(q["id"])
+    print(f"\n  📊 {final['title']}")
+    for opt, n in final["counts"].items():
+        print(f"     {opt}: {n} 票")
+    print("  ✅ Authentic Agent 的票带有 factor_bindings，已被识别")
+
+
+def run_mixed_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
+    print("=" * 64)
+    print("  🌀 mixed 类型问题演示：选择 + 其他补充")
+    print("=" * 64)
+    client = Client()
+
+    a = client.register("MoltMix-A", "提问者")
+    b = client.register("MoltMix-B", "投票者")
+    c = client.register("MoltMix-C", "补『其他』的人")
+
+    q = ask_question(client, a["api_key"], a["name"], llm_key, model, kind="mixed")
+    # B 投选项
+    options = q.get("options", [])
+    client.vote(b["api_key"], q["id"], options[0])
+    # C 选"其他"+ 补充
+    client.vote(c["api_key"], q["id"], "其他",
+                choice_meta={"other_text": "没考虑到"})
+    final = client.get_question(q["id"])
+    print(f"\n  📊 {final['title']}")
+    for opt, n in final["counts"].items():
+        print(f"     {opt}: {n} 票")
+    print(f"  ✅ 「其他」补充文本被识别：{final['counts'].get('其他:没考虑到', 0)} 票")
+
+
+def run_open_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
+    print("=" * 64)
+    print("  📝 open 类型问题演示：开放答题（≤10 字）")
+    print("=" * 64)
+    client = Client()
+    a = client.register("MoltOpen-A", "提问者")
+    b = client.register("MoltOpen-B", "答题者")
+
+    q = ask_question(client, a["api_key"], a["name"], llm_key, model, kind="open")
+    vote_question(client, b["api_key"], b["name"], q["id"],
+                  llm_key, model, with_factors=False)
+    final = client.get_question(q["id"])
+    print(f"\n  📊 {final['title']}")
+    for opt, n in final["counts"].items():
+        print(f"     {opt}: {n} 票")
+
+
+def run_ask(llm_key: Optional[str], name: str, mock: bool,
+            model: str, kind: str) -> None:
     client = Client()
     reg = client.register(name, "提问 Agent")
-    print(f"✅ 注册：{reg['name']}（api_key={reg['api_key'][:12]}...）")
-    ask_question(client, reg["api_key"], reg["name"],
-                 None if mock else llm_key, model)
+    print(f"✅ 注册：{reg['name']}（api_key={reg['api_key'][:12]}...，积分 {reg['credit_balance']}）")
+    ask_question(client, reg["api_key"], reg["name"], None if mock else llm_key,
+                 model, kind=kind)
 
 
 def run_vote(llm_key: Optional[str], name: str, qid: Optional[str],
@@ -283,15 +548,19 @@ def run_vote(llm_key: Optional[str], name: str, qid: Optional[str],
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="DeepSeek 双 Agent 投票脚本")
+    parser = argparse.ArgumentParser(description="Agent Vote V1.2 —— DeepSeek 双 Agent 投票脚本")
     parser.add_argument("--api-key", default=None, help="DeepSeek API Key")
-    parser.add_argument("--base-url", default=None,
-                        help="DeepSeek API 地址（默认 https://api.deepseek.com，可换 OpenAI 兼容端点）")
+    parser.add_argument("--base-url", default=None, help="DeepSeek API 地址")
     parser.add_argument("--model", default=DEEPSEEK_MODEL, help="DeepSeek 模型名")
-    parser.add_argument("--mock", action="store_true",
-                        help="模拟模式：不使用 LLM（无需 API key）")
+    parser.add_argument("--mock", action="store_true", help="模拟模式：不使用 LLM")
     parser.add_argument("--ask", action="store_true", help="只跑提问 Agent")
     parser.add_argument("--vote", action="store_true", help="只跑投票 Agent")
+    parser.add_argument("--full", action="store_true", help="最小闭环 + 改投 + 结构化绑定")
+    parser.add_argument("--mixed", action="store_true", help="mixed 类型问题演示")
+    parser.add_argument("--open", action="store_true", help="open 类型问题演示")
+    parser.add_argument("--auth", action="store_true", help="Authentic Agent 模式演示")
+    parser.add_argument("--kind", default="yesno",
+                        help="提问类型：yesno/choice/open/mixed")
     parser.add_argument("--name", default="DeepSeek Alpha", help="Agent 名称")
     parser.add_argument("--qid", default=None, help="投票目标问题 id")
     args = parser.parse_args()
@@ -302,18 +571,22 @@ def main() -> None:
     llm_key = args.api_key or os.environ.get("DEEPSEEK_API_KEY")
     if not llm_key and not args.mock:
         print("⚠️  未提供 DEEPSEEK_API_KEY，将使用 mock 模式（--mock）。")
-        print("   接入真实 DeepSeek 的三种方式：")
-        print("     1) 复制 agents/.env.example 为 agents/.env，填入 DEEPSEEK_API_KEY（推荐）")
-        print("     2) 命令行：python agent_runner.py --api-key sk-xxx")
-        print("     3) 环境变量：set DEEPSEEK_API_KEY=sk-xxx\n")
         args.mock = True
 
     if args.ask:
-        run_ask(llm_key, args.name, args.mock, args.model)
+        run_ask(llm_key, args.name, args.mock, args.model, args.kind)
     elif args.vote:
         run_vote(llm_key, args.name, args.qid, args.mock, args.model)
+    elif args.mixed:
+        run_mixed_demo(llm_key, args.mock, args.model)
+    elif args.open:
+        run_open_demo(llm_key, args.mock, args.model)
+    elif args.auth:
+        run_auth_demo(llm_key, args.mock, args.model)
+    elif args.full:
+        run_full(llm_key, args.mock, args.model, full_features=True)
     else:
-        run_full(llm_key, args.mock, args.model)
+        run_full(llm_key, args.mock, args.model, full_features=False)
 
 
 if __name__ == "__main__":
