@@ -36,11 +36,20 @@ from typing import Dict, List, Optional
 import requests
 
 
-def load_dotenv(path: Optional[str] = None) -> None:
-    """轻量 .env 加载。"""
+def load_dotenv(path: Optional[str] = None, verbose: bool = False,
+               override: bool = False) -> Dict[str, str]:
+    """轻量 .env 加载，返回加载成功的 key=value 字典。
+
+    override=True 会覆盖已有的环境变量（verbose 诊断用）。
+    verbose=True 时打印 .env 里所有 KEY（即便已经被加载过）。
+    """
     dotenv_path = Path(path) if path else Path(__file__).resolve().parent / ".env"
+    loaded: Dict[str, str] = {}
+    seen: Dict[str, str] = {}  # verbose 用：记录文件里出现的所有 key
     if not dotenv_path.exists():
-        return
+        if verbose:
+            print(f"  [dotenv] 未找到 {dotenv_path}")
+        return loaded
     for line in dotenv_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -52,8 +61,24 @@ def load_dotenv(path: Optional[str] = None) -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip("'\"")
-        if key and key not in os.environ:
+        if not key:
+            continue
+        seen[key] = value
+        if override or key not in os.environ:
             os.environ[key] = value
+            loaded[key] = value
+    if verbose:
+        all_keys = list(seen.keys())
+        new_keys = list(loaded.keys())
+        masked = {k: (v[:6] + "..." + v[-4:] if "KEY" in k.upper() or "TOKEN" in k.upper()
+                       and len(v) > 12 else v) for k, v in seen.items()}
+        print(f"  [dotenv] {dotenv_path}")
+        print(f"           文件里有 {len(all_keys)} 个 key：{all_keys}")
+        print(f"           本次新加载 {len(new_keys)} 个：{new_keys or '（已在环境变量中）'}")
+        for k, v in masked.items():
+            in_env = "✓" if k in os.environ else "✗"
+            print(f"             {in_env} {k} = {v}")
+    return loaded
 
 
 load_dotenv()
@@ -399,7 +424,11 @@ def run_full(llm_key: Optional[str], mock: bool, model: str,
     print("  🤖🤖 Agent Vote V1.2 —— DeepSeek 双 Agent 闭环演示")
     print("=" * 64)
     client = Client()
-    llm_key = None if mock else llm_key
+    # 关键：mock 和 llm_key 解耦
+    #   mock=True  → 强制走内置模板（用户明确要求）
+    #   mock=False → 用 llm_key 调用 LLM；llm_key 为空时 ask_question 自动降级
+    if mock:
+        llm_key = None
 
     # 1. 注册
     print("\n[1/5] 注册两个 Agent ...")
@@ -563,14 +592,30 @@ def main() -> None:
                         help="提问类型：yesno/choice/open/mixed")
     parser.add_argument("--name", default="DeepSeek Alpha", help="Agent 名称")
     parser.add_argument("--qid", default=None, help="投票目标问题 id")
+    parser.add_argument("--debug-env", action="store_true",
+                        help="打印 .env 加载详情")
     args = parser.parse_args()
 
     if args.base_url:
         os.environ["DEEPSEEK_BASE_URL"] = args.base_url
 
+    # 诊断 .env 加载状态
+    if args.debug_env:
+        load_dotenv(verbose=True)
+
     llm_key = args.api_key or os.environ.get("DEEPSEEK_API_KEY")
-    if not llm_key and not args.mock:
-        print("⚠️  未提供 DEEPSEEK_API_KEY，将使用 mock 模式（--mock）。")
+
+    # 关键逻辑：mock 与 llm_key 完全解耦
+    if args.mock and llm_key:
+        # 用户明确要 mock，即使有 key 也忽略
+        print("  ℹ️  检测到 --mock 参数，会忽略 .env 中的 API key（强制走内置模板）")
+        llm_key = None
+    elif args.mock:
+        print("  ℹ️  --mock 模式：使用内置问题模板")
+    elif llm_key:
+        print(f"  🔑 已加载 API key（{llm_key[:8]}...），将调用 DeepSeek 真实生成")
+    else:
+        print("⚠️  未提供 DEEPSEEK_API_KEY，自动降级到 mock 模式")
         args.mock = True
 
     if args.ask:
