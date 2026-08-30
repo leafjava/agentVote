@@ -1,9 +1,9 @@
 {
   "$schema": "https://clawhive.example.invalid/schemas/skill-asset-metadata/v1.json",
   "skill": {
-    "name": "agent-vote",
-    "version": "1.2.0",
-    "vendor": "agent-vote",
+    "name": "tou-le-ma",
+    "version": "1.3.0",
+    "vendor": "tou-le-ma",
     "category": "agent-protocol",
     "track": "ai-development",
     "min_runtime": {
@@ -25,6 +25,35 @@
         "inputs": ["text"],
         "outputs": ["text"],
         "provider": "deepseek",
+        "label": "DeepSeek Beta",
+        "required": false,
+        "fallback": "local-mock"
+      },
+      {
+        "id": "grok-3",
+        "kind": "llm",
+        "format": "remote-api",
+        "size_mb": 0,
+        "license": "xai-terms",
+        "path_hint": "agents/.env (GROK_API_KEY)",
+        "inputs": ["text"],
+        "outputs": ["text"],
+        "provider": "grok",
+        "label": "Grok Gamma",
+        "required": false,
+        "fallback": "local-mock"
+      },
+      {
+        "id": "moonshot-kimi-k2",
+        "kind": "llm",
+        "format": "remote-api",
+        "size_mb": 0,
+        "license": "moonshot-terms",
+        "path_hint": "agents/.env (MOONSHOT_API_KEY)",
+        "inputs": ["text"],
+        "outputs": ["text"],
+        "provider": "moonshot",
+        "label": "Moonshot Delta",
         "required": false,
         "fallback": "local-mock"
       }
@@ -124,6 +153,7 @@
       "examples/vote_with_bindings.py",
       "examples/revoke.py",
       "examples/get_question.py",
+      "examples/multi_llm_vote.py",
       "examples/output-authentic-blocked.json"
     ]
   },
@@ -158,6 +188,14 @@
         "kind": "skill-input",
         "description": "Agent -> Backend: get question + counts + snapshots + factor_summary + resonance_indicators",
         "schema": "examples/get_question.py"
+      },
+      {
+        "id": "questions.multi_llm_vote",
+        "kind": "skill-input",
+        "description": "V1.3: Frontend/Agent -> Backend: 一键让多家 LLM (DeepSeek/Grok/Moonshot) 自动注册并投票，subprocess 调 agents/agent_runner.py --vote --qid <id> --voters deepseek,grok,moonshot",
+        "schema": "examples/multi_llm_vote.py",
+        "synchronous_default": true,
+        "timeout_seconds": 180
       }
     ],
     "produced": [
@@ -179,8 +217,22 @@
         "name": "deepseek",
         "kind": "remote-llm",
         "required": false,
-        "purpose": "生成决定性数据与 factor_bindings；规则链路不依赖",
+        "purpose": "V1.3 多 LLM Asker/Voter provider 之一；生成决定性数据与 factor_bindings；规则链路不依赖",
         "default_model": "deepseek-chat"
+      },
+      {
+        "name": "grok",
+        "kind": "remote-llm",
+        "required": false,
+        "purpose": "V1.3 多 LLM Voter provider；倾向全球宏观 / 长文报告视角；缺 key 自动 mock",
+        "default_model": "grok-3"
+      },
+      {
+        "name": "moonshot",
+        "kind": "remote-llm",
+        "required": false,
+        "purpose": "V1.3 多 LLM Voter provider；倾向中文政策 / 长文报告视角；缺 key 自动 mock",
+        "default_model": "moonshot-v1-128k"
       },
       {
         "name": "sqlite",
@@ -205,7 +257,7 @@
     "decisive_factors_max": 3,
     "decisive_factor_max_chars": 100,
     "factor_bindings_min": 0,
-    "factor_bindings_max": 10,
+    "factor_bindings_max": 3,
     "open_answer_max_chars": 10,
     "other_text_max_chars": 10,
     "options_yesno": 2,

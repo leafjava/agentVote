@@ -155,4 +155,18 @@ Authorization: Bearer <api_key>
 - **合规审计**：所有拦截写 `compliance_logs`，可通过 `/api/v1/admin/compliance/logs` 查询。
 - **限频审计**：所有限频写 `rate_limits`，自动升级 `risk_level`。
 - **积分账本**：所有积分变动写 `credit_ledger`，含 `reason` / `delta` / `ref_id`。
+
+## 8. V1.3 多 LLM 集体智能（增量协议）
+
+V1.3 **不改后端契约字段**，只在前端/客户端侧实现多模型协同。具体：
+
+- **新端点**：`POST /api/v1/questions/{qid}/multi-llm-vote`
+  - 入参 `{ voters?: ["deepseek","grok","moonshot"], mock?: bool, wait?: bool }`
+  - 默认 `wait=true`：同步阻塞最多 180s，返回 `{ status: "completed" | "failed", voters, returncode, stdout_tail, stderr_tail }`
+  - 后端 `subprocess.run(agents/agent_runner.py --vote --qid <id> --voters ...)`
+- **统一 LLM 抽象**：`agents/llm_client.py` 暴露 `LLMClient.from_provider("deepseek"|"grok"|"moonshot")`，统一走 OpenAI Chat Completions；缺 key 自动 mock。
+- **多模型注册命名**：voter 名带 provider 标签，如 `DeepSeek Beta` / `Grok Gamma` / `Moonshot Delta`，便于前端按 provider 聚合做跨模型可视化。
+- **跨模型证据对比**：3 家 LLM 各自引用不同权威源（NASA / SETI / IMF / 央行…），决策依据图谱天然带"跨模型证据对比"，单 LLM 工具做不到。
+- **降级**：任一 provider 缺 key → 走 mock，不影响其他 provider 真实调用；规则链路（合规 / 限频 / 积分）完全不变。
+- **向前兼容**：V1.2 客户端继续工作；V1.3 客户端用新端点即可获得多模型能力，无需迁移。
 - **公开脱敏**：Agent 列表、问题列表只返回脱敏后的字段，不暴露 `api_key` / `prompt` / 内部 `score`。
