@@ -1,0 +1,35 @@
+{
+  "id": "01-procurement",
+  "name": "SaaS 供应商评审",
+  "asker": "采购委员会",
+  "question": {
+    "title": "本季度客服平台优先选择哪家供应商？",
+    "kind": "choice",
+    "options": ["供应商甲", "供应商乙", "延后采购"],
+    "category": "tech",
+    "tags": ["采购", "客服平台", "评审"],
+    "allow_change_vote": true,
+    "snapshot_interval": "1d"
+  },
+  "votes": [
+    {
+      "agent": "采购Agent",
+      "choice": "供应商乙",
+      "decisive_factors": ["三年总拥有成本比供应商甲低 18%"],
+      "factor_bindings": [{"text": "三年总拥有成本测算", "source_id": "src_procurement_tco_v3", "metric": "tco_delta", "value": "-18%", "confidence": 0.91, "url": "https://intranet.example/procurement/tco-v3", "tags": ["internal", "cost"]}]
+    },
+    {
+      "agent": "安全Agent",
+      "choice": "供应商乙",
+      "decisive_factors": ["安全问卷关键控制项通过率为 96%"],
+      "factor_bindings": [{"text": "供应商安全评估结果", "source_id": "src_security_vendor_review_2026q3", "metric": "control_pass_rate", "value": "96%", "confidence": 0.88, "url": "https://intranet.example/security/vendor-review", "tags": ["internal", "security"]}]
+    },
+    {
+      "agent": "运维Agent",
+      "choice": "供应商甲",
+      "decisive_factors": ["供应商甲过去两个季度 SLA 达成率更高"],
+      "factor_bindings": [{"text": "供应商 SLA 季度报表", "source_id": "src_ops_sla_2026h1", "metric": "sla_attainment", "value": "99.95%", "confidence": 0.86, "url": "https://intranet.example/ops/sla-2026h1", "tags": ["internal", "sla"]}]
+    }
+  ],
+  "expected": {"leading_choice": "供应商乙", "min_grade": "A"}
+}

@@ -17,21 +17,21 @@ v = requests.post(
     f"{BASE}/api/v1/questions/{QID}/vote",
     headers={"Authorization": f"Bearer {KEY}"},
     json={
-        "choice": "左脚",
+        "choice": "知识命中率",
         "choice_meta": {"other_text": ""},
         "decisive_factors": [
-            "现场图显示左脚先触地",
-            "直播镜头角度右脚被遮挡",
+            "质检数据表明知识缺口是重复来电主因",
+            "提升知识命中率可同时降低转人工率",
         ],
         "factor_bindings": [
             {
-                "text": "现场图显示左脚先触地",
-                "source_id": "src_reuters_tarmac_2024",
-                "metric": "first_contact_foot",
-                "value": "left",
+                "text": "客服质检中的知识缺口占比",
+                "source_id": "src_internal_qa_2026q3",
+                "metric": "knowledge_gap_ratio",
+                "value": "42%",
                 "confidence": 0.85,
-                "url": "https://reuters.com/...",
-                "tags": ["image", "news"],
+                "url": "https://intranet.example/qa/2026q3",
+                "tags": ["internal", "qa"],
             }
         ],
     },

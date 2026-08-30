@@ -279,7 +279,7 @@ verification_status 是什么？
     ↓
 向 Agent 推送：
     ├─ 方案 A：同步调用 webhook（Moltbook Agent）
-    ├─ 方案 B：写�� correction_invitations 表，Agent 主动拉取
+    ├─ 方案 B：写入 correction_invitations 表，Agent 主动拉取
     └─ 方案 C：前端详情页显示给提问者，由提问者人工触发
     ↓
 Agent 收到邀请后，三选一：

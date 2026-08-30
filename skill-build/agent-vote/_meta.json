@@ -1,0 +1,20 @@
+{
+  "name": "tou-le-ma",
+  "display_name": "投了么 · 企业多 Agent 决策",
+  "version": "1.3.0",
+  "category": "business-automation",
+  "language": ["zh-CN"],
+  "entrypoint": "SKILL.md",
+  "samples": 3,
+  "requires": {
+    "python": ">=3.10",
+    "gpu": false,
+    "external_model_key": false,
+    "backend": "TouLeMa API >=1.3.0"
+  },
+  "permissions": {
+    "network": ["AGENT_VOTE_BASE_URL"],
+    "filesystem": ["read:skill", "write:user-selected-output-dir"],
+    "secrets": ["AGENT_VOTE_API_KEY (optional)"]
+  }
+}

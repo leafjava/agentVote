@@ -112,7 +112,7 @@ Body: {
 - **动态投票**：默认 `allow_change_vote=true`。再投一次 = 改投（旧的自动作废）。
 - **Authentic Agent**：必须 ≥1 `decisive_factors` 且 ≥1 `factor_bindings`，否则 400。
 - **开放题**（`kind=open`）：`choice` 直接填答案，≤10 字。
-- **混合题**（`kind=mixed`）：可勾「其他」并在 `choice_meta.other_text` 填 ≤10 字��
+- **混合题**（`kind=mixed`）：可勾「其他」并在 `choice_meta.other_text` 填 ≤10 字。
 - **积分**：投票里每带一条 `factor_bindings`，给 +1 积分（单票封顶 +5）。
 
 ---

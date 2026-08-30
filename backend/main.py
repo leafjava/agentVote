@@ -1,5 +1,5 @@
 """
-Agent Vote V1.2 —— 预测市场化的动态投票与多类型问题引擎
+TouLeMa Agent Vote V1.3 —— 带证据的动态多 Agent 决策引擎
 
 最小闭环保留（V1.0 向后兼容）：
   两个 Agent 注册 → 一个提问 → 一个投票 → 实时统计
@@ -22,6 +22,8 @@ V1.2 新能力（全部叠加，V1.0 老接口行为不变）：
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -39,7 +41,7 @@ import rate_limit
 import snapshot
 from db import DB_FILE, get_conn, init_db, now_ts, parse_json_field, to_json
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
@@ -60,22 +62,30 @@ async def lifespan(app: FastAPI):
     task.cancel()
     try:
         await task
-    except Exception:
+    except asyncio.CancelledError:
         pass
 
 
 app = FastAPI(
-    title="Agent Vote V1.2",
-    description="预测市场化的动态投票与多类型问题引擎",
-    version="1.2.0",
+    title="TouLeMa Agent Vote",
+    description="带证据、可审计、可复用的多 Agent 集体决策协议",
+    version="1.3.0",
     lifespan=lifespan,
 )
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "AGENT_VOTE_CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_credentials="*" not in cors_origins,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Key"],
 )
 
 
@@ -135,6 +145,17 @@ def get_agent(authorization: Optional[str] = Header(None)) -> tuple:
     if not row:
         raise HTTPException(401, "无效 api_key，请先注册")
     return key, dict(row)
+
+
+def require_admin(
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+) -> None:
+    """保护会改变风险/合规状态或读取审计日志的管理接口。"""
+    expected = os.environ.get("AGENT_VOTE_ADMIN_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(503, "管理接口未配置：请设置 AGENT_VOTE_ADMIN_TOKEN")
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, expected):
+        raise HTTPException(401, "需要有效的 X-Admin-Key")
 
 
 def _touch_active(agent_key: str) -> None:
@@ -412,7 +433,7 @@ def vote(qid: str, body: VoteIn, request: Request,
         if comp.state == "rejected":
             raise HTTPException(400, f"投票被合规拦截：{comp.note}")
 
-        # 3) 限���
+        # 3) 限频
         ok, retry, msg = rate_limit.check_and_consume("vote", key, _client_ip(request))
         if not ok:
             raise HTTPException(429, f"{msg}（retry_after={retry}）")
@@ -737,9 +758,114 @@ def resonance_indicators(qid: str) -> List[Dict]:
     return out
 
 
+@app.get("/api/v1/questions/{qid}/decision-pack", tags=["questions"])
+def decision_pack(qid: str) -> Dict[str, Any]:
+    """生成机器可读的决策证据包，便于 OA/CRM/审计系统复用。"""
+    view = question_view(qid)
+    voters = view["voters"]
+    total = len(voters)
+    counts = view["counts"]
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    top_count = ranked[0][1] if ranked else 0
+    winners = [choice for choice, count in ranked if count == top_count and count > 0]
+
+    bindings = [
+        binding
+        for voter in voters
+        for binding in voter.get("factor_bindings", [])
+        if isinstance(binding, dict)
+    ]
+    confidences = []
+    sources = set()
+    for binding in bindings:
+        try:
+            confidence = float(binding.get("confidence"))
+            if 0 <= confidence <= 1:
+                confidences.append(confidence)
+        except (TypeError, ValueError):
+            pass
+        source_id = str(binding.get("source_id") or "").strip()
+        if source_id:
+            sources.add(source_id)
+
+    votes_with_factors = sum(bool(v.get("decisive_factors")) for v in voters)
+    votes_with_bindings = sum(bool(v.get("factor_bindings")) for v in voters)
+    factor_coverage = round(votes_with_factors / total, 3) if total else 0.0
+    binding_coverage = round(votes_with_bindings / total, 3) if total else 0.0
+    avg_confidence = round(sum(confidences) / len(confidences), 3) if confidences else 0.0
+
+    if total >= 3 and binding_coverage >= 0.8 and avg_confidence >= 0.8 and len(sources) >= 2:
+        grade = "A"
+    elif total >= 2 and binding_coverage >= 0.6 and avg_confidence >= 0.65:
+        grade = "B"
+    elif total and (factor_coverage > 0 or binding_coverage > 0):
+        grade = "C"
+    else:
+        grade = "D"
+
+    consensus_ratio = round(top_count / total, 3) if total else 0.0
+    audit_payload = {
+        "question_id": qid,
+        "counts": counts,
+        "weighted_counts": view["weighted_counts"],
+        "voters": [
+            {
+                "name": voter["name"],
+                "choice": voter["choice"],
+                "time": voter["time"],
+                "decisive_factors": voter.get("decisive_factors", []),
+                "factor_bindings": voter.get("factor_bindings", []),
+            }
+            for voter in voters
+        ],
+    }
+    canonical = json.dumps(
+        audit_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+    return {
+        "schema_version": "decision-pack/v1",
+        "question": {
+            "id": qid,
+            "title": view["title"],
+            "kind": view["kind"],
+            "category": view["category"],
+            "status": view["status"],
+            "compliance_state": view["compliance_state"],
+        },
+        "decision": {
+            "state": "insufficient_data" if not total else ("tie" if len(winners) > 1 else "ready"),
+            "leading_choice": winners[0] if len(winners) == 1 else None,
+            "tied_choices": winners if len(winners) > 1 else [],
+            "counts": counts,
+            "weighted_counts": view["weighted_counts"],
+            "total_votes": total,
+            "consensus_ratio": consensus_ratio,
+            "disagreement_index": round(1 - consensus_ratio, 3) if total else 0.0,
+        },
+        "evidence": {
+            "grade": grade,
+            "factor_coverage": factor_coverage,
+            "binding_coverage": binding_coverage,
+            "average_declared_confidence": avg_confidence,
+            "unique_sources": len(sources),
+            "source_ids": sorted(sources),
+            "factor_summary": view["factor_summary"],
+            "warning": "confidence 为 Agent 自报值；本版本评估证据完整度，不宣称已核验事实真伪。",
+        },
+        "audit": {
+            "algorithm": "sha256",
+            "canonicalization": "json-sort-keys-v1",
+            "digest": hashlib.sha256(canonical).hexdigest(),
+            "snapshot_count": len(view["snapshots"]),
+            "generated_at": now_ts(),
+        },
+    }
+
+
 # ---------------------------------------------------------------- 管理 / 元数据
 @app.post("/api/v1/admin/compliance/recheck", tags=["admin"])
-def compliance_recheck(qid: str):
+def compliance_recheck(qid: str, _: None = Depends(require_admin)):
     """手动重审一个问题。"""
     with get_conn() as conn:
         q = conn.execute("SELECT * FROM questions WHERE id = ?", (qid,)).fetchone()
@@ -756,12 +882,12 @@ def compliance_recheck(qid: str):
 
 
 @app.get("/api/v1/admin/compliance/logs", tags=["admin"])
-def compliance_logs(limit: int = 50):
+def compliance_logs(limit: int = 50, _: None = Depends(require_admin)):
     return compliance.recent_logs(limit=limit)
 
 
 @app.post("/api/v1/admin/agents/{api_key}/risk", tags=["admin"])
-def set_risk(api_key: str, level: int):
+def set_risk(api_key: str, level: int, _: None = Depends(require_admin)):
     rate_limit.set_risk_level(api_key, level)
     return {"api_key": api_key, "risk_level": level}
 
@@ -789,7 +915,11 @@ class MultiLLMVoteIn(BaseModel):
 
 
 @app.post("/api/v1/questions/{qid}/multi-llm-vote", tags=["questions"])
-def multi_llm_vote(qid: str, body: MultiLLMVoteIn = MultiLLMVoteIn()):
+def multi_llm_vote(
+    qid: str,
+    body: MultiLLMVoteIn = MultiLLMVoteIn(),
+    authorization: Optional[str] = Header(None),
+):
     """一键让多家 LLM（DeepSeek Beta / Grok Gamma / Moonshot Delta）同时投票该问题。
 
     **复用 `agents/agent_runner.py --vote` 的完整能力**：
@@ -800,6 +930,9 @@ def multi_llm_vote(qid: str, body: MultiLLMVoteIn = MultiLLMVoteIn()):
     **使用场景**：在投票广场的每条问题卡片右侧加一个按钮，评委点一下
     就触发 3 家 LLM 同时投票，立即看到「跨模型对比」效果。
     """
+    _, caller = get_agent(authorization)
+    if caller["risk_level"] >= 2:
+        raise HTTPException(403, "高风险账户不能触发多模型任务")
     voters = body.voters or ["deepseek", "grok", "moonshot"]
     # 合法 provider 白名单
     allowed = {"deepseek", "grok", "moonshot"}
@@ -823,7 +956,9 @@ def multi_llm_vote(qid: str, body: MultiLLMVoteIn = MultiLLMVoteIn()):
     # 透传环境变量（含 DEEPSEEK_API_KEY / GROK_API_KEY / MOONSHOT_API_KEY）
     # + 强制 BASE_URL 指向本地后端
     env = {**os.environ}
-    env["BASE_URL"] = f"http://127.0.0.1:8000"
+    env["BASE_URL"] = os.environ.get(
+        "AGENT_VOTE_INTERNAL_BASE_URL", "http://127.0.0.1:8000"
+    )
     # 强制子进程 stdout/stderr 用 UTF-8（Windows 默认 GBK 会让 🔑/ℹ️ 这类 emoji 崩）
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
@@ -898,8 +1033,8 @@ def multi_llm_vote(qid: str, body: MultiLLMVoteIn = MultiLLMVoteIn()):
 @app.get("/", tags=["meta"])
 def root():
     return {
-        "name": "Agent Vote V1.2",
-        "version": "1.2.0",
+        "name": "TouLeMa Agent Vote",
+        "version": "1.3.0",
         "min_loop": "register → ask → vote",
         "docs": "/skill.md",
         "endpoints": [
@@ -913,8 +1048,16 @@ def root():
             "GET  /api/v1/questions/{id}",
             "GET  /api/v1/questions/{id}/history",
             "GET  /api/v1/questions/{id}/snapshots",
+            "GET  /api/v1/questions/{id}/decision-pack",
             "GET  /api/v1/admin/compliance/logs",
             "GET  /api/v1/meta/settlement/{region}",
             "GET  /skill.md",
         ],
     }
+
+
+@app.get("/healthz", tags=["meta"])
+def healthz():
+    with get_conn() as conn:
+        conn.execute("SELECT 1").fetchone()
+    return {"status": "ok", "version": app.version}

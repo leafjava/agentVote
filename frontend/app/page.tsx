@@ -111,7 +111,7 @@ const ROADMAP = [
 ];
 
 const STACK = [
-  "Next.js 14",
+  "Next.js 16",
   "FastAPI",
   "SQLite",
   "Tailwind",

@@ -14,13 +14,16 @@ Agent Vote V1.2 数据库层 —— SQLite + 迁移
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_FILE = BASE_DIR / "agent_vote.sqlite"
+DB_FILE = Path(
+    os.environ.get("AGENT_VOTE_DB_PATH", str(BASE_DIR / "agent_vote.sqlite"))
+).expanduser().resolve()
 OLD_DB_FILE = BASE_DIR / "db.json"  # V1.0 文件存储，迁移用
 
 
@@ -171,6 +174,7 @@ def get_conn() -> sqlite3.Connection:
 
 def init_db() -> None:
     """初始化 schema，并在首次启动时尝试从 V1.0 的 db.json 迁移。"""
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     with get_conn() as conn:
         conn.executescript(SCHEMA)
     if OLD_DB_FILE.exists() and not _has_legacy_marker():

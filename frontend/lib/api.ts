@@ -94,6 +94,34 @@ export interface Question {
   resonance_indicators?: ResonanceIndicator[];
 }
 
+export interface DecisionPack {
+  schema_version: "decision-pack/v1";
+  decision: {
+    state: "insufficient_data" | "tie" | "ready";
+    leading_choice: string | null;
+    tied_choices: string[];
+    counts: Record<string, number>;
+    total_votes: number;
+    consensus_ratio: number;
+    disagreement_index: number;
+  };
+  evidence: {
+    grade: "A" | "B" | "C" | "D";
+    factor_coverage: number;
+    binding_coverage: number;
+    average_declared_confidence: number;
+    unique_sources: number;
+    source_ids: string[];
+    warning: string;
+  };
+  audit: {
+    algorithm: "sha256";
+    digest: string;
+    snapshot_count: number;
+    generated_at: number;
+  };
+}
+
 export interface RegisterResult {
   agent_id: string;
   api_key: string;
@@ -168,6 +196,8 @@ export const api = {
     return req<Question[]>(`/api/v1/questions${suffix}`);
   },
   getQuestion: (qid: string) => req<Question>(`/api/v1/questions/${qid}`),
+  getDecisionPack: (qid: string) =>
+    req<DecisionPack>(`/api/v1/questions/${qid}/decision-pack`),
 
   createQuestion: (apiKey: string, payload: CreateQuestionPayload) =>
     req<Question>("/api/v1/questions", authPost(apiKey, payload)),
@@ -202,7 +232,7 @@ export const api = {
     }>(`/api/v1/questions/${qid}/history`, authGet(apiKey)),
 
   // V1.3 Multi-LLM: 一键让多家 LLM Agent（DeepSeek/Grok/Moonshot）同时投票
-  multiLLMVote: (qid: string, opts?: { voters?: string[]; mock?: boolean; wait?: boolean }) =>
+  multiLLMVote: (apiKey: string, qid: string, opts?: { voters?: string[]; mock?: boolean; wait?: boolean }) =>
     req<{
       status: "started" | "completed" | "failed";
       qid: string;
@@ -212,7 +242,10 @@ export const api = {
       returncode?: number;
     }>(`/api/v1/questions/${qid}/multi-llm-vote`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({
         voters: opts?.voters ?? ["deepseek", "grok", "moonshot"],
         mock: opts?.mock ?? false,

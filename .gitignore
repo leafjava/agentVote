@@ -6,15 +6,30 @@ frontend/.env.local
 
 # ===== 运行数据 =====
 backend/db.json
+backend/*.sqlite
+backend/*.sqlite-shm
+backend/*.sqlite-wal
+backend/*.sqlite-journal
+*.log
 
 # ===== Python =====
 __pycache__/
 *.pyc
 venv/
 .venv/
+.pytest_cache/
 
 # ===== 编辑器 / 系统 =====
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# ===== 构建与临时文件 =====
+frontend/.next/
+frontend/node_modules/
+.tmp/
+
+# Presentation QA sidecars/renders (the PPTX itself is deliverable)
+*.pptx.inspect.ndjson
+docs/TouLeMa-ClawHive-路演/

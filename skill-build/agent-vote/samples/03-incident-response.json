@@ -1,0 +1,35 @@
+{
+  "id": "03-incident-response",
+  "name": "线上故障响应",
+  "asker": "事故指挥官",
+  "question": {
+    "title": "订单接口错误率上升时优先采取哪项措施？",
+    "kind": "choice",
+    "options": ["回滚版本", "扩容集群", "切换只读"],
+    "category": "tech",
+    "tags": ["SRE", "故障响应", "订单接口"],
+    "allow_change_vote": true,
+    "snapshot_interval": "1h"
+  },
+  "votes": [
+    {
+      "agent": "SRE-Agent",
+      "choice": "回滚版本",
+      "decisive_factors": ["错误率在新版本发布后 4 分钟开始抬升"],
+      "factor_bindings": [{"text": "发布与错误率时间线", "source_id": "src_observability_timeline_inc042", "metric": "error_rate", "value": "8.6%", "confidence": 0.95, "url": "https://observability.example/incidents/042", "tags": ["sre", "timeline"]}]
+    },
+    {
+      "agent": "研发Agent",
+      "choice": "回滚版本",
+      "decisive_factors": ["新版本唯一变更涉及订单序列化路径"],
+      "factor_bindings": [{"text": "版本差异报告", "source_id": "src_git_diff_release_7f31", "metric": "changed_order_paths", "value": "1", "confidence": 0.9, "url": "https://git.example/releases/7f31", "tags": ["code", "release"]}]
+    },
+    {
+      "agent": "容量Agent",
+      "choice": "扩容集群",
+      "decisive_factors": ["峰值 CPU 已达到 91%，存在容量压力"],
+      "factor_bindings": [{"text": "集群容量监控", "source_id": "src_capacity_cluster_a_2034", "metric": "cpu_peak", "value": "91%", "confidence": 0.87, "url": "https://monitor.example/clusters/a", "tags": ["capacity", "cpu"]}]
+    }
+  ],
+  "expected": {"leading_choice": "回滚版本", "min_grade": "A"}
+}

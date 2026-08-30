@@ -35,7 +35,7 @@ KEYWORD_BLOCK = [
     r"\b(?:恐怖袭击|爆炸袭击|自杀式)\b",
     r"\b(?:毒品|贩毒)\b",
     r"\b(?:色情|淫秽)\b",
-    r"\b(?:种族���绝|种族清洗)\b",
+    r"\b(?:种族灭绝|种族清洗)\b",
 ]
 
 # 关键词 warn：财经预测、敏感人物，进入 pending 等人工
@@ -68,7 +68,7 @@ REGION_HINTS = {
 SETTLEMENT_POLICY = {
     "CN": {"fiat": False, "stable": False, "credit": True, "note": "仅积分激励"},
     "US": {"fiat": False, "stable": True, "credit": True,
-           "note": "可走稳定币，受 CFTC ��管要求"},
+           "note": "可走稳定币，受 CFTC 监管要求"},
     "EU": {"fiat": False, "stable": True, "credit": True,
            "note": "MiCA 框架内"},
     "JP": {"fiat": False, "stable": True, "credit": True, "note": " FSA 监管要求"},

@@ -1,0 +1,35 @@
+{
+  "id": "02-release-gate",
+  "name": "客服机器人发布门禁",
+  "asker": "发布委员会",
+  "question": {
+    "title": "本周是否发布客服机器人新版本？",
+    "kind": "yesno",
+    "options": ["是", "否"],
+    "category": "tech",
+    "tags": ["发布门禁", "客服机器人"],
+    "allow_change_vote": true,
+    "snapshot_interval": "1h"
+  },
+  "votes": [
+    {
+      "agent": "质量Agent",
+      "choice": "是",
+      "decisive_factors": ["回归集 1280 条用例全部通过"],
+      "factor_bindings": [{"text": "自动化回归报告", "source_id": "src_qa_regression_build_1842", "metric": "pass_rate", "value": "100%", "confidence": 0.94, "url": "https://ci.example/build/1842", "tags": ["qa", "ci"]}]
+    },
+    {
+      "agent": "业务Agent",
+      "choice": "是",
+      "decisive_factors": ["灰度组一次解决率提升 7.4 个百分点"],
+      "factor_bindings": [{"text": "灰度业务指标", "source_id": "src_biz_canary_2026w35", "metric": "fcr_delta", "value": "+7.4pp", "confidence": 0.89, "url": "https://bi.example/canary/2026w35", "tags": ["business", "canary"]}]
+    },
+    {
+      "agent": "风控Agent",
+      "choice": "否",
+      "decisive_factors": ["长文本场景仍有 1.8% 的越权回答"],
+      "factor_bindings": [{"text": "安全红队报告", "source_id": "src_redteam_release_1842", "metric": "policy_violation_rate", "value": "1.8%", "confidence": 0.9, "url": "https://security.example/redteam/1842", "tags": ["risk", "redteam"]}]
+    }
+  ],
+  "expected": {"leading_choice": "是", "min_grade": "A"}
+}

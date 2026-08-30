@@ -98,7 +98,7 @@ def test_v10_min_loop():
 
 def test_v11_decisive_factors(a, b, qid):
     print("\n[2] V1.1 决定性数据绑定（向后兼容）")
-    # 注册一个 C，专门用来带 decisive_factors 投（避��改投限频）
+    # 注册一个 C，专门用来带 decisive_factors 投（避免改投限频）
     r = requests.post(f"{BASE}/api/v1/agents/register", json={
         "name": f"V11-C-{uuid.uuid4().hex[:6]}",
         "description": "带 factors 的投票者",

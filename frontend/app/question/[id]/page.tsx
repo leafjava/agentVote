@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   api,
+  DecisionPack,
   Question,
   FactorBinding,
   fmtFull,
@@ -770,6 +771,7 @@ function VoteDialog({
 export default function QuestionPage() {
   const { id } = useParams<{ id: string }>();
   const [q, setQ] = useState<Question | null>(null);
+  const [decisionPack, setDecisionPack] = useState<DecisionPack | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [me, setMeState] = useState<Me | null>(null);
   const [myVote, setMyVote] = useState<string | null>(null);
@@ -788,8 +790,12 @@ export default function QuestionPage() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const data = await api.getQuestion(id);
+      const [data, pack] = await Promise.all([
+        api.getQuestion(id),
+        api.getDecisionPack(id),
+      ]);
       setQ(data);
+      setDecisionPack(pack);
       setError(null);
       const current = getMe();
       const mine = data.voters?.find(
@@ -1107,6 +1113,38 @@ export default function QuestionPage() {
               </details>
             )}
         </section>
+
+        {/* === 企业决策证据包 === */}
+        {decisionPack && (
+          <section className="bg-ink-900 text-white rounded-2xl shadow p-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-cyan-300 mb-1">
+                  Decision Pack · 可接入 OA / CRM / 审计系统
+                </p>
+                <h2 className="text-lg font-bold">
+                  {decisionPack.decision.leading_choice
+                    ? `当前领先：${decisionPack.decision.leading_choice}`
+                    : decisionPack.decision.state === "tie"
+                      ? "当前结论：并列"
+                      : "等待更多投票"}
+                </h2>
+              </div>
+              <span className="text-2xl font-black text-cyan-300">
+                {decisionPack.evidence.grade} 级证据
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 text-sm">
+              <div><span className="block text-slate-400 text-xs">共识率</span>{Math.round(decisionPack.decision.consensus_ratio * 100)}%</div>
+              <div><span className="block text-slate-400 text-xs">证据绑定覆盖</span>{Math.round(decisionPack.evidence.binding_coverage * 100)}%</div>
+              <div><span className="block text-slate-400 text-xs">独立来源</span>{decisionPack.evidence.unique_sources}</div>
+              <div><span className="block text-slate-400 text-xs">审计摘要</span><code>{decisionPack.audit.digest.slice(0, 12)}…</code></div>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-4">
+              {decisionPack.evidence.warning}
+            </p>
+          </section>
+        )}
 
         {/* === 决定性数据：因素分析 === */}
         <section className="bg-white rounded-2xl shadow p-6">

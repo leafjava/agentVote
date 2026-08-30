@@ -204,11 +204,15 @@ export default function DemoPage() {
   // V1.3 Multi-LLM: 一键让 3 家 LLM 自动投票
   const triggerMultiLLM = async (qid: string) => {
     if (runningMultiLLM.has(qid)) return;
+    if (!me) {
+      showToast("请先注册 Agent 身份，再触发多模型任务", false);
+      return;
+    }
     setRunningMultiLLM((prev) => new Set(prev).add(qid));
     showToast("🤖 正在让 DeepSeek Beta / Grok Gamma / Moonshot Delta 投票…（约 15~25s）");
     try {
       // 默认 wait=true：等后端 3 个 voter 全部跑完再返回，能拿到真实结果
-      const res = await api.multiLLMVote(qid, { wait: true });
+      const res = await api.multiLLMVote(me.api_key, qid, { wait: true });
       if (res.status === "completed" && res.returncode === 0) {
         showToast(
           `✅ ${res.voters.length} 个 LLM 已投票，去看理由 → ${qid.slice(0, 12)}…`,

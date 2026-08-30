@@ -442,7 +442,7 @@ def vote_question(client: Client, api_key: str, name: str, qid: str,
             options_str = "、".join(options)
             sys_prompt = (
                 f"你是一个参与结构化投票的 AI Agent（{llm.label}）。"
-                f"针对���题「{title}」，从选项【{options_str}】中选一个并投票。"
+                f"针对问题「{title}」，从选项【{options_str}】中选一个并投票。"
                 "只输出选项本身，不要多余文字。"
             )
             raw = llm.chat([{"role": "system", "content": sys_prompt},

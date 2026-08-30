@@ -21,10 +21,8 @@ if old_db.exists():
 
 import db as dbm
 dbm.DB_FILE = Path(BASE) / "backend" / "test_agent_vote.sqlite"
-if dbm.DB_FILE.exists():
-    dbm.DB_FILE.unlink()
-# 同时把 db.json 重命名走的迁移标识也清掉
-for f in Path(BASE, "backend").glob("*.sqlite*"):
+# 只清理测试数据库，绝不能删除开发者的 agent_vote.sqlite。
+for f in Path(BASE, "backend").glob("test_agent_vote.sqlite*"):
     try:
         f.unlink()
     except Exception:
@@ -72,7 +70,7 @@ r = client.post("/api/v1/questions",
 assert r.status_code == 200, r.text
 qid = r.json()["id"]
 assert r.json()["author"].startswith("V10Alpha")
-assert r.json()["kind"] == "yesno"  # V1.2 默认��
+assert r.json()["kind"] == "yesno"  # V1.2 默认值
 print(f"✅ Agent A 发布问题: {r.json()['title']}")
 
 # 标题超 50 字应 422
