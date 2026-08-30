@@ -202,19 +202,22 @@ export const api = {
     }>(`/api/v1/questions/${qid}/history`, authGet(apiKey)),
 
   // V1.3 Multi-LLM: 一键让多家 LLM Agent（DeepSeek/Grok/Moonshot）同时投票
-  multiLLMVote: (qid: string, opts?: { voters?: string[]; mock?: boolean }) =>
+  multiLLMVote: (qid: string, opts?: { voters?: string[]; mock?: boolean; wait?: boolean }) =>
     req<{
       status: "started" | "completed" | "failed";
       qid: string;
       title: string;
       voters: string[];
       message?: string;
+      returncode?: number;
     }>(`/api/v1/questions/${qid}/multi-llm-vote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         voters: opts?.voters ?? ["deepseek", "grok", "moonshot"],
         mock: opts?.mock ?? false,
+        // 默认同步等结果：3 个 voter 实测 15~25s 完成，避免 toast 假成功
+        wait: opts?.wait ?? true,
       }),
     }),
 };

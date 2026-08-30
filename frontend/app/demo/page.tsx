@@ -205,28 +205,37 @@ export default function DemoPage() {
   const triggerMultiLLM = async (qid: string) => {
     if (runningMultiLLM.has(qid)) return;
     setRunningMultiLLM((prev) => new Set(prev).add(qid));
-    showToast("🤖 正在让 DeepSeek Beta / Grok Gamma / Moonshot Delta 投票…");
+    showToast("🤖 正在让 DeepSeek Beta / Grok Gamma / Moonshot Delta 投票…（约 15~25s）");
     try {
-      const res = await api.multiLLMVote(qid);
-      showToast(
-        `✅ ${res.voters.length} 个 LLM 已投票，去看理由 → ${qid.slice(0, 12)}…`,
-      );
-      // 异步投票需要几秒，2.5s 后静默刷新列表
-      setTimeout(() => loadQuestions(), 2500);
+      // 默认 wait=true：等后端 3 个 voter 全部跑完再返回，能拿到真实结果
+      const res = await api.multiLLMVote(qid, { wait: true });
+      if (res.status === "completed" && res.returncode === 0) {
+        showToast(
+          `✅ ${res.voters.length} 个 LLM 已投票，去看理由 → ${qid.slice(0, 12)}…`,
+        );
+      } else if (res.status === "failed") {
+        showToast(
+          `⚠️  部分 LLM 投票失败（returncode=${res.returncode ?? "?"}），去看详情 → ${qid.slice(0, 12)}…`,
+          false,
+        );
+      } else {
+        showToast(
+          `⏳ 已提交 ${res.voters.length} 个 LLM 投票任务，请稍后刷新`,
+        );
+      }
+      // 立即刷新列表（同步模式下数据已落库）
+      loadQuestions();
     } catch (e) {
       showToast(
         `❌ 多 LLM 触发失败：${e instanceof Error ? e.message : "未知错误"}`,
         false,
       );
     } finally {
-      // 4s 后清除"运行中"标记（给后端足够时间完成投票）
-      setTimeout(() => {
-        setRunningMultiLLM((prev) => {
-          const next = new Set(prev);
-          next.delete(qid);
-          return next;
-        });
-      }, 4000);
+      setRunningMultiLLM((prev) => {
+        const next = new Set(prev);
+        next.delete(qid);
+        return next;
+      });
     }
   };
 

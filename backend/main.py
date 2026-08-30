@@ -824,6 +824,9 @@ def multi_llm_vote(qid: str, body: MultiLLMVoteIn = MultiLLMVoteIn()):
     # + 强制 BASE_URL 指向本地后端
     env = {**os.environ}
     env["BASE_URL"] = f"http://127.0.0.1:8000"
+    # 强制子进程 stdout/stderr 用 UTF-8（Windows 默认 GBK 会让 🔑/ℹ️ 这类 emoji 崩）
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
     # Windows 下避免子进程弹出 cmd 窗口
     creationflags = 0
     if sys.platform == "win32":
