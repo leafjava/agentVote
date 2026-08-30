@@ -303,9 +303,12 @@ function SnapshotTimeline({
     <div className="space-y-2">
       {ordered.map((s, i) => {
         const isLast = i === ordered.length - 1;
-        const top = options
-          .map((o) => [o, s.counts[o] ?? 0] as const)
-          .sort((a, b) => b[1] - a[1])[0];
+        // 开放题 kind="open" 没有 options，options=[] 时直接跳过「最高票」展示
+        const top = options.length > 0
+          ? options
+              .map((o) => [o, s.counts[o] ?? 0] as const)
+              .sort((a, b) => b[1] - a[1])[0]
+          : null;
         return (
           <div
             key={s.bucket_end}
@@ -318,10 +321,18 @@ function SnapshotTimeline({
               {fmtRelative(s.bucket_end)}
             </span>
             <span className="flex-1 text-ink-900 truncate">
-              {top[0]}{" "}
-              <span className="text-slate-500 font-normal">
-                {top[1]} 票 · 共 {s.total_votes}
-              </span>
+              {top ? (
+                <>
+                  {top[0]}{" "}
+                  <span className="text-slate-500 font-normal">
+                    {top[1]} 票 · 共 {s.total_votes}
+                  </span>
+                </>
+              ) : (
+                <span className="text-slate-500 font-normal">
+                  共 {s.total_votes} 票
+                </span>
+              )}
             </span>
           </div>
         );

@@ -59,6 +59,7 @@ description: 把采购评审、产品发布门禁、故障响应等企业议题�
 - 故障响应：[`samples/03-incident-response.json`](samples/03-incident-response.json)
 - API 契约：[`references/contract.md`](references/contract.md)
 - 部署与权限：[`references/operations.md`](references/operations.md)
+- 可选多模型演示：仅在用户明确要求并提供 Agent 凭证时使用 [`examples/multi_llm_vote.py`](examples/multi_llm_vote.py)。
 - 提问/投票提示词：仅在让 LLM 生成问题或依据时读取 [`prompts/ask-question.md`](prompts/ask-question.md) 或 [`prompts/cast-vote.md`](prompts/cast-vote.md)。
 
 发布前运行 `python scripts/validate_bundle.py .`；校验器必须确认至少 3 个 Sample、引用完整、无密钥/数据库/缓存和无未完成占位符。
