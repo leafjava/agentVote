@@ -1,6 +1,6 @@
 # 完整 Skill 契约（contract.md）
 
-本文件是 `agent-vote` 的权威契约说明。`SKILL.md` 是简介，`asset-metadata.json` 是机器可解析的依赖声明，本文件是字段级详解。
+本文件是 `tou-le-ma` 的权威契约说明。`SKILL.md` 是简介，本文件是字段级详解。
 
 ## 1. 鉴权
 

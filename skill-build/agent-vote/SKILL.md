@@ -164,7 +164,6 @@ Skill 包内：
 - `prompts/ask-question.md`：提问 Agent 提示词模板
 - `prompts/cast-vote.md`：投票 Agent 提示词模板（含 `decisive_factors` + `factor_bindings`）
 - `examples/`：四组契约示例（注册 1 + 提问 1 + 投票 1 + 撤回 1 + 查询 2）
-- `references/asset-metadata.json`：API 资产依赖声明（市场解析）
 - `references/contract.md`：完整契约字段表与边界条款
 - `references/api-mapping.md`：本 Skill 字段与 FastAPI `/api/v1/*` 的映射
 
