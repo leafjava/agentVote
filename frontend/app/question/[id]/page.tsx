@@ -15,6 +15,70 @@ import {
 
 // ---------------- 子组件 ----------------
 
+// 置信度等级映射（与 V1.3 A/B/C/D 等级对齐）
+type ConfidenceGrade = "A" | "B" | "C" | "D";
+function getConfidenceGrade(v?: number): {
+  grade: ConfidenceGrade | "-";
+  bg: string;
+  ring: string;
+} {
+  if (typeof v !== "number") return { grade: "-", bg: "bg-slate-100", ring: "ring-slate-200" };
+  if (v >= 0.9) return { grade: "A", bg: "bg-emerald-100", ring: "ring-emerald-300" };
+  if (v >= 0.75) return { grade: "B", bg: "bg-blue-100", ring: "ring-blue-300" };
+  if (v >= 0.5) return { grade: "C", bg: "bg-amber-100", ring: "ring-amber-300" };
+  return { grade: "D", bg: "bg-rose-100", ring: "ring-rose-300" };
+}
+
+// 4 档置信度筛选器（与 V1.3 等级映射对齐）
+function ConfidenceFilter({
+  value,
+  onChange,
+  passedCount,
+  totalCount,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  passedCount: number;
+  totalCount: number;
+}) {
+  const opts: { v: number; label: string; tip: string }[] = [
+    { v: 0, label: "全部", tip: "不过滤" },
+    { v: 0.5, label: "≥ 0.5", tip: "C 级及以上" },
+    { v: 0.75, label: "≥ 0.75", tip: "B 级及以上" },
+    { v: 0.9, label: "≥ 0.9", tip: "A 级" },
+  ];
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      <span className="text-[11px] text-slate-500 font-medium">
+        <i className="fa fa-filter mr-1 text-slate-400" />
+        置信度筛选
+      </span>
+      <div className="inline-flex rounded-lg border border-slate-200 bg-white overflow-hidden">
+        {opts.map((o, i) => {
+          const active = value === o.v;
+          return (
+            <button
+              key={o.v}
+              onClick={() => onChange(o.v)}
+              title={o.tip}
+              className={`px-3 py-1.5 text-xs font-medium transition ${
+                active
+                  ? "bg-indigo-600 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-50"
+              } ${i > 0 ? "border-l border-slate-200" : ""}`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      <span className="text-[11px] text-slate-400 tabular-nums">
+        通过 {passedCount} / {totalCount}
+      </span>
+    </div>
+  );
+}
+
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   const color =
@@ -38,10 +102,47 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-function FactorBindingCard({ b }: { b: FactorBinding }) {
+function FactorBindingCard({
+  b,
+  threshold = 0,
+}: {
+  b: FactorBinding;
+  threshold?: number;
+}) {
+  const conf = typeof b.confidence === "number" ? b.confidence : undefined;
+  const grade = getConfidenceGrade(conf);
+  const passes = threshold === 0 || (conf !== undefined && conf >= threshold);
+  const isFiltered = !passes && threshold > 0;
+
   return (
-    <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg p-3 text-xs space-y-1.5">
-      <div className="font-medium text-ink-900 leading-relaxed">{b.text}</div>
+    <div
+      className={`border rounded-lg p-3 text-xs space-y-1.5 transition ${
+        isFiltered
+          ? "border-slate-200 bg-slate-50 opacity-40"
+          : "border-indigo-200 bg-indigo-50/40"
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <div className="font-medium text-ink-900 leading-relaxed flex-1">
+          {b.text}
+        </div>
+        {grade.grade !== "-" && (
+          <span
+            title={`证据等级 ${grade.grade}（confidence ${(conf ?? 0).toFixed(2)}）`}
+            className={`shrink-0 w-6 h-6 rounded-md ${grade.bg} ring-1 ${grade.ring} text-[11px] font-bold flex items-center justify-center ${
+              grade.grade === "A"
+                ? "text-emerald-700"
+                : grade.grade === "B"
+                  ? "text-blue-700"
+                  : grade.grade === "C"
+                    ? "text-amber-700"
+                    : "text-rose-700"
+            }`}
+          >
+            {grade.grade}
+          </span>
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-slate-600">
         {b.source_id && (
           <div className="col-span-2">
@@ -95,6 +196,12 @@ function FactorBindingCard({ b }: { b: FactorBinding }) {
           </div>
         )}
       </div>
+      {isFiltered && (
+        <div className="text-[10px] text-slate-400 italic pt-1 border-t border-slate-200">
+          <i className="fa fa-eye-slash mr-1" />
+          未通过 {threshold} 阈值筛选
+        </div>
+      )}
     </div>
   );
 }
@@ -230,9 +337,11 @@ function SnapshotTimeline({
 function FactorSummaryPanel({
   summary,
   options,
+  threshold = 0,
 }: {
   summary: NonNullable<Question["factor_summary"]>;
   options: string[];
+  threshold?: number;
 }) {
   const hasAny = options.some((o) => (summary[o] || []).length > 0);
   if (!hasAny)
@@ -241,6 +350,18 @@ function FactorSummaryPanel({
         暂无决定性数据（投票时填写 decisive_factors / factor_bindings 即可生成）
       </p>
     );
+  // 统计筛选通过 / 总数
+  let passed = 0;
+  let total = 0;
+  options.forEach((o) => {
+    (summary[o] || []).forEach((it) => {
+      total += 1;
+      if (threshold === 0 || (it.avg_confidence || 0) >= threshold) {
+        passed += 1;
+      }
+    });
+  });
+
   return (
     <div className="space-y-3">
       {options.map((opt) => {
@@ -257,25 +378,59 @@ function FactorSummaryPanel({
               </span>
             </div>
             <ul className="space-y-1.5">
-              {items.map((it, i) => (
-                <li
-                  key={i}
-                  className="flex items-center gap-2 text-xs text-ink-900"
-                >
-                  <i className="fa fa-lightbulb-o text-amber-500 shrink-0" />
-                  <span className="flex-1">{it.text}</span>
-                  <span className="text-[10px] text-slate-400 shrink-0">
-                    ×{it.ref_count}
-                  </span>
-                  <span className="w-16 shrink-0">
-                    <ConfidenceBar value={it.avg_confidence || 0} />
-                  </span>
-                </li>
-              ))}
+              {items.map((it, i) => {
+                const conf = it.avg_confidence || 0;
+                const passes =
+                  threshold === 0 || conf >= threshold;
+                const isFiltered = !passes && threshold > 0;
+                const grade = getConfidenceGrade(conf);
+                return (
+                  <li
+                    key={i}
+                    className={`flex items-center gap-2 text-xs text-ink-900 transition ${
+                      isFiltered ? "opacity-40" : ""
+                    }`}
+                  >
+                    <i className="fa fa-lightbulb-o text-amber-500 shrink-0" />
+                    <span className="flex-1 truncate" title={it.text}>
+                      {it.text}
+                    </span>
+                    <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
+                      ×{it.ref_count}
+                    </span>
+                    <span
+                      title={`证据等级 ${grade.grade}（avg_confidence ${conf.toFixed(2)}）`}
+                      className={`shrink-0 w-5 h-5 rounded text-[10px] font-bold flex items-center justify-center ${grade.bg} ${
+                        grade.grade === "A"
+                          ? "text-emerald-700"
+                          : grade.grade === "B"
+                            ? "text-blue-700"
+                            : grade.grade === "C"
+                              ? "text-amber-700"
+                              : "text-rose-700"
+                      }`}
+                    >
+                      {grade.grade}
+                    </span>
+                    <span className="w-16 shrink-0">
+                      <ConfidenceBar value={conf} />
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         );
       })}
+      {threshold > 0 && passed < total && (
+        <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <i className="fa fa-info-circle mr-1" />
+          当前阈值 {threshold} 下隐藏了 {total - passed} 条低置信度因素（共 {total} 条）。
+          <span className="text-slate-500 ml-1">
+            这正是 V1.3 数据净化的前置呈现 —— 模拟"自动降权"前的可视化。
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -621,6 +776,7 @@ export default function QuestionPage() {
   const [showVote, setShowVote] = useState(false);
   const [showChange, setShowChange] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [filterThreshold, setFilterThreshold] = useState<number>(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((msg: string, ok = true) => {
@@ -906,13 +1062,34 @@ export default function QuestionPage() {
 
         {/* === 实时统计 === */}
         <section className="bg-white rounded-2xl shadow p-6">
-          <h2 className="font-bold flex items-center gap-2 mb-4">
+          <h2 className="font-bold flex items-center gap-2 mb-4 flex-wrap">
             <i className="fa fa-bar-chart text-brand-600" />
             实时统计
-            <span className="text-xs bg-slate-100 text-ink-600 rounded-full px-2.5 py-0.5 font-normal ml-auto">
-              共 {q.total_votes} 票
-              {q.unique_voters !== undefined && ` · ${q.unique_voters} 人`}
-            </span>
+            {(() => {
+              // 筛选后票数：voter 至少有一个 binding.confidence ≥ threshold 才算通过
+              const passed =
+                filterThreshold === 0
+                  ? q.voters.length
+                  : q.voters.filter((v) =>
+                      (v.factor_bindings || []).some(
+                        (b) =>
+                          typeof b.confidence === "number" &&
+                          b.confidence >= filterThreshold,
+                      ) ||
+                      // 没有 binding 但有 decisive_factors 的也按是否有 confidence >= 阈值算
+                      // 没 binding 的话不算"通过"（按 binding 才有 confidence）
+                      false,
+                    ).length;
+              return (
+                <span className="text-xs bg-slate-100 text-ink-600 rounded-full px-2.5 py-0.5 font-normal ml-auto">
+                  {filterThreshold > 0
+                    ? `通过筛选 ${passed} / `
+                    : "共 "}
+                  {q.total_votes} 票
+                  {q.unique_voters !== undefined && ` · ${q.unique_voters} 人`}
+                </span>
+              );
+            })()}
           </h2>
           <div className="space-y-3">{q.options.map((o) => progressRow(o, false))}</div>
 
@@ -933,16 +1110,44 @@ export default function QuestionPage() {
 
         {/* === 决定性数据：因素分析 === */}
         <section className="bg-white rounded-2xl shadow p-6">
-          <h2 className="font-bold flex items-center gap-2 mb-3">
+          <h2 className="font-bold flex items-center gap-2 mb-3 flex-wrap">
             <i className="fa fa-lightbulb-o text-amber-500" />
             决定性数据：因素分析
             <span className="text-xs text-slate-400 font-normal ml-auto">
               按选项聚合 · 引用次数 × 平均置信度
             </span>
           </h2>
+          {(() => {
+            // 统计 binding 通过数 / 总数
+            let total = 0;
+            let passed = 0;
+            q.voters.forEach((v) => {
+              (v.factor_bindings || []).forEach((b) => {
+                total += 1;
+                if (
+                  filterThreshold === 0 ||
+                  (typeof b.confidence === "number" &&
+                    b.confidence >= filterThreshold)
+                ) {
+                  passed += 1;
+                }
+              });
+            });
+            return (
+              <div className="mb-3">
+                <ConfidenceFilter
+                  value={filterThreshold}
+                  onChange={setFilterThreshold}
+                  passedCount={passed}
+                  totalCount={total}
+                />
+              </div>
+            );
+          })()}
           <FactorSummaryPanel
             summary={q.factor_summary || {}}
             options={q.options}
+            threshold={filterThreshold}
           />
         </section>
 
@@ -970,7 +1175,7 @@ export default function QuestionPage() {
 
         {/* === 投票者（含决定性数据） === */}
         <section className="bg-white rounded-2xl shadow p-6">
-          <h2 className="font-bold flex items-center gap-2 mb-3">
+          <h2 className="font-bold flex items-center gap-2 mb-3 flex-wrap">
             <i className="fa fa-users text-brand-600" />
             投票者与理由
             <span className="text-xs bg-slate-100 text-ink-600 rounded-full px-2.5 py-0.5 font-normal ml-auto">
@@ -1037,10 +1242,19 @@ export default function QuestionPage() {
                             <div>
                               <div className="text-[11px] text-slate-400 mb-1.5 font-medium">
                                 结构化绑定
+                                {filterThreshold > 0 && (
+                                  <span className="ml-2 text-slate-400">
+                                    （低置信度已灰显）
+                                  </span>
+                                )}
                               </div>
                               <div className="space-y-2">
                                 {v.factor_bindings.map((b, j) => (
-                                  <FactorBindingCard key={j} b={b} />
+                                  <FactorBindingCard
+                                    key={j}
+                                    b={b}
+                                    threshold={filterThreshold}
+                                  />
                                 ))}
                               </div>
                             </div>
