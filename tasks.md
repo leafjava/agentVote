@@ -40,7 +40,7 @@
 - [x] Frontend `npm ci`、TypeScript/Next.js production build 通过，`npm audit` 为 0 漏洞。
 - [x] Skill 校验器、3 个 Sample、ZIP 一致性检查通过。
 - [x] PPT 全页渲染、溢出检查与逐页视觉检查通过。
-- [ ] 检查 Git diff，保留用户原有未提交 PRD；拉取远端最新提交，提交本轮改动并推送。
+- [x] 检查 Git diff，保留用户原有未提交 PRD；拉取远端最新提交，提交本轮改动并推送。
 
 ## 完成定义
 
