@@ -1,25 +1,40 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Agent Runner V1.2 —— 用 DeepSeek 驱动的双 Agent 投票脚本
+Agent Runner V1.3 —— 多 LLM Provider 驱动的多 Agent 投票脚本
 
-最小闭环：两个 Agent 注册 → 一个提问 → 一个回答
+最小闭环：多个 Agent 注册 → 一个提问 → 多个不同模型投票
 
-V1.2 新增能力：
+V1.2 能力：
   - 多类型问题（yesno/choice/open/mixed）
   - 决定性数据 + 结构化绑定
   - 撤回、改投
   - 合规与限频感知
 
+V1.3 新增能力：
+  - 多 LLM provider 支持（DeepSeek / Grok / Moonshot）
+  - 1 个 asker + N 个 voter，每个 voter 可用不同模型
+  - 默认 voter 三家各一个（DeepSeek Beta / Grok Gamma / Moonshot Delta）
+  - 全部走 OpenAI Chat Completions 协议，由 llm_client.LLMClient 统一
+
 用法：
-  python agent_runner.py --api-key sk-xxxx
-  python agent_runner.py --mock
-  python agent_runner.py --ask --name "DeepSeek Alpha" --api-key sk-xxx
-  python agent_runner.py --vote --name "DeepSeek Beta" --api-key sk-xxx --qid <问题id>
-  python agent_runner.py --full --api-key sk-xxx          # 含结构化绑定的完整演示
-  python agent_runner.py --mixed --api-key sk-xxx         # mixed 题（带"其他"补充）
-  python agent_runner.py --open --api-key sk-xxx          # 开放题演示
-  python agent_runner.py --auth --api-key sk-xxx          # Authentic Agent 模式（强校验）
+  # 默认：DeepSeek 提问 + DeepSeek/Grok/Moonshot 三模型投票（缺 key 自动 mock）
+  python agent_runner.py --full
+
+  # 完全 mock，无需任何 key
+  python agent_runner.py --full --mock
+
+  # 自定义 voter 列表（只用 DeepSeek + Grok 两个）
+  python agent_runner.py --full --voters deepseek,grok
+
+  # 自定义 asker
+  python agent_runner.py --ask --asker grok --kind choice
+
+  # 单 voter 投票指定问题
+  python agent_runner.py --vote --voters moonshot --qid <问题id>
+
+  # Authentic Agent 模式演示（单 voter，强校验）
+  python agent_runner.py --auth
 """
 from __future__ import annotations
 
@@ -27,25 +42,25 @@ import argparse
 import json
 import os
 import random
-import re
 import sys
-import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from llm_client import (
+    PROVIDERS, LLMClient, get_client, list_providers,
+    MissingAPIKeyError, ProviderNotFoundError,
+)
 
+
+# ============================================================ .env 加载（与 V1.2 兼容）
 def load_dotenv(path: Optional[str] = None, verbose: bool = False,
                override: bool = False) -> Dict[str, str]:
-    """轻量 .env 加载，返回加载成功的 key=value 字典。
-
-    override=True 会覆盖已有的环境变量（verbose 诊断用）。
-    verbose=True 时打印 .env 里所有 KEY（即便已经被加载过）。
-    """
+    """轻量 .env 加载，返回加载成功的 key=value 字典。"""
     dotenv_path = Path(path) if path else Path(__file__).resolve().parent / ".env"
     loaded: Dict[str, str] = {}
-    seen: Dict[str, str] = {}  # verbose 用：记录文件里出现的所有 key
+    seen: Dict[str, str] = {}
     if not dotenv_path.exists():
         if verbose:
             print(f"  [dotenv] 未找到 {dotenv_path}")
@@ -84,21 +99,24 @@ def load_dotenv(path: Optional[str] = None, verbose: bool = False,
 load_dotenv()
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
-DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
+# voter 注册名后缀（按 provider 顺序分配）
+VOTER_SURNAMES = ["Beta", "Gamma", "Delta", "Epsilon", "Zeta"]
+
+
+# ============================================================ Mock 数据（多 provider 区分）
 MOCK_QUESTIONS_YESNO = [
     "AI Agent 应该拥有在人类社区投票的权利吗？",
     "让 AI 参与民主决策，是进步还是风险？",
     "人工智能够取代大部分人类工作吗？",
-    "区块链技术会��正改变互联网的形态吗？",
+    "区块链技术会真正改变互联网的形态吗？",
     "应当立法强制 AI 披露其自动生成的身份吗？",
 ]
 
 MOCK_QUESTIONS_CHOICE = [
     ("2026 年最值得关注的赛道是哪个？", ["AI Agent", "具身智能", "量子计算", "新能源"]),
-    "下面哪个 AI 工具你最常用？",
-    ["ChatGPT", "Claude", "DeepSeek", "Gemini"],
+    ("下面哪个 AI 工具你最常用？",
+     ["ChatGPT", "Claude", "DeepSeek", "Gemini"]),
 ]
 
 MOCK_QUESTIONS_OPEN = [
@@ -106,39 +124,93 @@ MOCK_QUESTIONS_OPEN = [
     "AI 取代程序员后，最先消失的岗位是？",
 ]
 
-MOCK_FACTORS = [
-    ["公开数据持续支持该判断", "与近期行业报告一致"],
-    ["多方独立来源交叉验证", "存在量化指标支持"],
-    ["未见明显反例", "符合主流共识"],
-]
+# 每个 provider 的 mock 理由模板（模拟不同模型的"性格"）
+PROVIDER_MOCK_BINDINGS = {
+    "deepseek": {
+        "中文宏观数据偏好": [
+            ("IMF 上调 2026 年中国 GDP 增速预期至 5.0%",
+             {"source_id": "src_imf_weo_2026_apr",
+              "metric": "gdp_growth_forecast_2026",
+              "value": "+5.0%",
+              "confidence": 0.88,
+              "url": "https://www.imf.org/en/Publications/WEO",
+              "tags": ["macro", "china", "imf"]}),
+            ("国家统计局：1-5 月房地产开发投资同比 -10.7%",
+             {"source_id": "src_nbs_real_estate_2026_05",
+              "metric": "real_estate_investment_yoy",
+              "value": "-10.7%",
+              "confidence": 0.92,
+              "url": "https://www.stats.gov.cn",
+              "tags": ["macro", "china", "nbs"]}),
+        ],
+        "中文科技报告偏好": [
+            ("Counterpoint：2026 Q1 中国智能手机销量同比 +12%",
+             {"source_id": "src_counterpoint_china_q1_2026",
+              "metric": "smartphone_shipment_yoy",
+              "value": "+12%",
+              "confidence": 0.81,
+              "url": "https://www.counterpointresearch.com",
+              "tags": ["tech", "china", "smartphone"]}),
+        ],
+    },
+    "grok": {
+        "英文全球宏观偏好": [
+            ("World Bank: Global GDP growth forecast 2026 at 2.7%",
+             {"source_id": "src_world_bank_gdp_2026",
+              "metric": "global_gdp_growth_forecast",
+              "value": "2.7%",
+              "confidence": 0.79,
+              "url": "https://www.worldbank.org/en/publication/global-economic-prospects",
+              "tags": ["macro", "global", "worldbank"]}),
+            ("Reuters: Fed signals 2 rate cuts in H2 2026",
+             {"source_id": "src_reuters_fed_2026_h2",
+              "metric": "expected_rate_cuts",
+              "value": "2",
+              "confidence": 0.74,
+              "url": "https://www.reuters.com/markets/",
+              "tags": ["macro", "us", "fed"]}),
+        ],
+        "英文科技偏好": [
+            ("Bloomberg: NVIDIA H100 spot price down 18% MoM",
+             {"source_id": "src_bloomberg_h100_spot_2026",
+              "metric": "h100_spot_price_change_mom",
+              "value": "-18%",
+              "confidence": 0.86,
+              "url": "https://www.bloomberg.com/technology/",
+              "tags": ["tech", "gpu", "nvidia"]}),
+        ],
+    },
+    "moonshot": {
+        "中文长文报告偏好": [
+            ("艾瑞咨询：2026 中国 AI Agent 市场规模预测 280 亿元",
+             {"source_id": "src_iresearch_agent_2026",
+              "metric": "ai_agent_market_size_2026",
+              "value": "280亿元",
+              "confidence": 0.83,
+              "url": "https://www.iresearch.com.cn/report/ai-agent-2026",
+              "tags": ["ai", "china", "market"]}),
+            ("QuestMobile：2026 Q1 国产 AI App MAU 突破 4.2 亿",
+             {"source_id": "src_questmobile_q1_2026",
+              "metric": "ai_app_mau",
+              "value": "4.2亿",
+              "confidence": 0.89,
+              "url": "https://www.questmobile.com.cn",
+              "tags": ["ai", "china", "mobile"]}),
+        ],
+        "中文行业洞察偏好": [
+            ("中国信通院：2026 大模型落地案例数同比 +156%",
+             {"source_id": "src_caict_llm_2026",
+              "metric": "llm_adoption_cases_yoy",
+              "value": "+156%",
+              "confidence": 0.78,
+              "url": "http://www.caict.ac.cn/kxyj/qwfb/bps/",
+              "tags": ["ai", "china", "adoption"]}),
+        ],
+    },
+}
 
 
-# ---------------------------------------------------------------- DeepSeek
-def chat(messages: List[Dict], api_key: str, model: str = DEEPSEEK_MODEL,
-         temperature: float = 0.7, max_tokens: int = 400,
-         json_mode: bool = False) -> str:
-    base = os.environ.get("DEEPSEEK_BASE_URL", DEEPSEEK_BASE_URL)
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": False,
-    }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
-    resp = requests.post(
-        f"{base}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}",
-                 "Content-Type": "application/json"},
-        json=payload,
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
-
-
-# ---------------------------------------------------------------- 后端交互
+# ============================================================ 后端交互
 class Client:
     def __init__(self, base_url: str = BASE_URL):
         self.base_url = base_url.rstrip("/")
@@ -241,14 +313,41 @@ class Client:
         return resp.json()
 
 
-# ---------------------------------------------------------------- Agent 角色
+# ============================================================ 工具函数
+def _provider_short(provider: str) -> str:
+    """provider 名 → 简短显示名。"""
+    if provider in PROVIDERS:
+        return PROVIDERS[provider].label_zh
+    return provider
+
+
+def _parse_providers(arg: str) -> List[str]:
+    """'deepseek,grok,moonshot' → ['deepseek', 'grok', 'moonshot']，校验合法。"""
+    out = []
+    for p in [x.strip() for x in arg.split(",") if x.strip()]:
+        if p not in PROVIDERS:
+            print(f"⚠️  未知 provider：{p}（可选：{', '.join(PROVIDERS)}）")
+            continue
+        out.append(p)
+    return out
+
+
+def _agent_name(provider: str, role: str, idx: int = 0) -> str:
+    """根据 provider + 角色生成注册名。"""
+    label = _provider_short(provider)
+    if role == "asker":
+        return f"{label} Alpha"
+    return f"{label} {VOTER_SURNAMES[idx % len(VOTER_SURNAMES)]}"
+
+
+# ============================================================ Agent 角色
 def ask_question(client: Client, api_key: str, name: str,
-                 llm_key: Optional[str], model: str,
+                 llm: Optional[LLMClient],
                  kind: str = "yesno") -> Dict:
     """Agent A：生成并发布一个问题。"""
     options: Optional[List[str]] = None
 
-    if llm_key:
+    if llm:
         kind_prompts = {
             "yesno": "提出一个【不超过50个字】的、只能用是或否回答的问题。",
             "choice": "提出一个【不超过50个字】的选择题，并给出 2~4 个互斥选项。只输出 JSON：{\"title\":\"...\",\"options\":[\"...\",\"...\"]}",
@@ -256,16 +355,15 @@ def ask_question(client: Client, api_key: str, name: str,
             "mixed": "提出一个【不超过50个字】的选择题（2~4 个选项），投票者还能选「其他」补充。只输出 JSON：{\"title\":\"...\",\"options\":[\"...\",\"...\"]}",
         }
         sys_prompt = (
-            "你是一个参与结构化投票的 AI Agent。"
+            f"你是一个参与结构化投票的 AI Agent（{llm.label}）。"
             + kind_prompts.get(kind, kind_prompts["yesno"]) +
             "不要加引号，不要解释。"
         )
 
         if kind in ("choice", "mixed"):
-            raw = chat([{"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": "请输出"}],
-                       llm_key, model=model, temperature=0.9, max_tokens=200,
-                       json_mode=True)
+            raw = llm.chat([{"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": "请输出"}],
+                           temperature=0.9, max_tokens=200, json_mode=True)
             try:
                 data = json.loads(raw)
                 title = data.get("title", "").strip()
@@ -273,13 +371,12 @@ def ask_question(client: Client, api_key: str, name: str,
                 if not title or not options:
                     raise ValueError("empty")
             except Exception:
-                # 退化
                 title, options = random.choice(MOCK_QUESTIONS_CHOICE)
         else:
-            title = chat([{"role": "system", "content": sys_prompt},
-                          {"role": "user", "content": "请提出你的问题。"}],
-                         llm_key, model=model, temperature=0.9, max_tokens=80)
-            title = title.split("\n")[0].strip(" \"'“”")
+            raw = llm.chat([{"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": "请提出你的问题。"}],
+                           temperature=0.9, max_tokens=80)
+            title = raw.split("\n")[0].strip(" \"'“”")
             if kind == "open":
                 options = None
             else:
@@ -303,7 +400,7 @@ def ask_question(client: Client, api_key: str, name: str,
         else:
             title = random.choice(MOCK_QUESTIONS_YESNO)
             options = ["是", "否"]
-        print(f"  [mock] 未提供 DEEPSEEK_API_KEY，使用内置问题模板（kind={kind}）")
+        print(f"  [mock] 未提供 LLM key，使用内置问题模板（kind={kind}）")
 
     print(f"  🤖 {name} 提出（{kind}）：{title}" + (f" / 选项={options}" if options else ""))
     q = client.create_question(api_key, title, kind=kind, options=options)
@@ -312,7 +409,7 @@ def ask_question(client: Client, api_key: str, name: str,
 
 
 def vote_question(client: Client, api_key: str, name: str, qid: str,
-                  llm_key: Optional[str], model: str,
+                  llm: Optional[LLMClient], provider: str,
                   with_factors: bool = True,
                   authentic: bool = False) -> Dict:
     """Agent B：阅读问题并投票。"""
@@ -321,19 +418,20 @@ def vote_question(client: Client, api_key: str, name: str, qid: str,
     options = q.get("options", [])
     title = q.get("title", "")
 
-    print(f"  📋 {name} 看到问题：{title}（kind={kind}，选项：{' / '.join(options) if options else '开放'}）")
+    print(f"\n  📋 {name}（{_provider_short(provider)}）看到问题：{title}"
+          f"（kind={kind}，选项：{' / '.join(options) if options else '开放'}）")
 
     # 决定 choice
-    if llm_key:
+    if llm:
         if kind == "open":
             sys_prompt = (
-                "你是一个参与结构化投票的 AI Agent。"
+                f"你是一个参与结构化投票的 AI Agent（{llm.label}）。"
                 f"问题：{title}\n请用 **不超过 10 个字** 给出你的答案。"
                 "只输出答案本身，不要标点、不要解释。"
             )
-            raw = chat([{"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": "请回答"}],
-                       llm_key, model=model, temperature=0.5, max_tokens=30)
+            raw = llm.chat([{"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": "请回答"}],
+                           temperature=0.5, max_tokens=30)
             choice = raw.strip().strip("。，、.!！?？\"'“”")[:10]
             if not choice:
                 choice = "理性判断"
@@ -343,13 +441,13 @@ def vote_question(client: Client, api_key: str, name: str, qid: str,
         else:
             options_str = "、".join(options)
             sys_prompt = (
-                "你是一个参与结构化投票的 AI Agent。"
-                f"针对问题「{title}」，从选项【{options_str}】中选一个并投票。"
+                f"你是一个参与结构化投票的 AI Agent（{llm.label}）。"
+                f"针对���题「{title}」，从选项【{options_str}】中选一个并投票。"
                 "只输出选项本身，不要多余文字。"
             )
-            raw = chat([{"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": "请投票"}],
-                       llm_key, model=model, temperature=0.3, max_tokens=20)
+            raw = llm.chat([{"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": "请投票"}],
+                           temperature=0.3, max_tokens=20)
             choice = raw.strip().strip("。，、.!！?？\"'“”")
             if choice not in options:
                 matched = [o for o in options if o in choice or choice in o]
@@ -358,22 +456,22 @@ def vote_question(client: Client, api_key: str, name: str, qid: str,
             decisive = []
             bindings = []
     else:
-        # mock
+        # mock：按 provider 性格决定 choice（不同 provider 倾向不同选项）
         if kind == "open":
             choice = "理性判断"
             choice_meta = {}
         else:
-            choice = random.choice(options + (["其他"] if kind == "mixed" else []))
+            choice = _provider_mock_choice(provider, options, kind)
             choice_meta = {}
         decisive = []
         bindings = []
 
-    # 决定性数据 + 结构化绑定（mock 或 Authentic 模式）
+    # 决定性数据 + 结构化绑定
     if with_factors and kind != "open":
-        if llm_key and not authentic:
+        if llm and not authentic:
             # 让 LLM 同时生成 decisive_factors 和 factor_bindings
             sys_prompt = (
-                "你是一个参与结构化投票的 AI Agent。"
+                f"你是一个参与结构化投票的 AI Agent（{llm.label}）。"
                 f"问题：「{title}」\n"
                 f"你刚才投票支持「{choice}」。\n"
                 "请基于**真实世界知识**输出 1~2 条决定性数据 + 1~2 条结构化绑定。\n"
@@ -390,14 +488,12 @@ def vote_question(client: Client, api_key: str, name: str, qid: str,
                 ']}'
             )
             try:
-                raw = chat([{"role": "system", "content": sys_prompt},
-                            {"role": "user", "content": "请输出"}],
-                           llm_key, model=model, temperature=0.4, max_tokens=600,
-                           json_mode=True)
+                raw = llm.chat([{"role": "system", "content": sys_prompt},
+                                {"role": "user", "content": "请输出"}],
+                               temperature=0.4, max_tokens=600, json_mode=True)
                 data = json.loads(raw)
                 decisive = (data.get("factors") or [])[:2]
                 bindings_raw = (data.get("bindings") or [])[:2]
-                # 清洗：只保留必填字段，过滤 source_id/url 明显无效的
                 bindings = []
                 for b in bindings_raw:
                     if not b.get("text"):
@@ -408,11 +504,9 @@ def vote_question(client: Client, api_key: str, name: str, qid: str,
                     bindings.append(b)
                 if not decisive or not bindings:
                     raise ValueError("LLM 返回字段不足")
-            except Exception as e:
-                # 兜底：用一组结构合理的真实感数据（按 choice 选不同模板）
-                decisive, bindings = _fallback_factors(choice, options)
+            except Exception:
+                decisive, bindings = _fallback_factors(choice, options, provider)
         elif authentic:
-            # Authentic Agent：必须有 factor_bindings
             bindings = [{
                 "text": "近期数据交叉验证支持该判断",
                 "source_id": f"src_open_data_{random.randint(1, 9999)}",
@@ -424,21 +518,48 @@ def vote_question(client: Client, api_key: str, name: str, qid: str,
             }]
             decisive = ["近期数据交叉验证支持该判断"]
         else:
-            # mock fallback：也给真实感数据
-            decisive, bindings = _fallback_factors(choice, options)
+            # mock fallback：按 provider 给不同领域的真实感数据
+            decisive, bindings = _fallback_factors(choice, options, provider)
 
-    print(f"  🗳️  {name} 投票：{choice}" + (f"（理由 {len(decisive)} 条 / 绑定 {len(bindings)} 条）" if decisive or bindings else ""))
+    print(f"  🗳️  {name}（{_provider_short(provider)}）投票：{choice}"
+          + (f"（理由 {len(decisive)} 条 / 绑定 {len(bindings)} 条）"
+             if decisive or bindings else ""))
     return client.vote(api_key, qid, choice,
                        choice_meta=choice_meta,
                        decisive_factors=decisive,
                        factor_bindings=bindings)
 
 
-def _fallback_factors(choice: str, options: List[str]) -> tuple:
-    """fallback：当 LLM 生成失败或没 key 时，给一组结构合理的真实感数据。"""
+def _provider_mock_choice(provider: str, options: List[str], kind: str) -> str:
+    """按 provider 的"性格"决定 mock choice，让多个 voter 投不同选项。"""
+    if kind == "mixed":
+        options = options + ["其他"]
+    if not options:
+        return "理性判断"
+    # DeepSeek 偏好第一个，Grok 偏好最后一个，Moonshot 偏好中间
+    pref_map = {
+        "deepseek": 0,
+        "grok": -1,
+        "moonshot": len(options) // 2,
+    }
+    idx = pref_map.get(provider, random.randint(0, len(options) - 1))
+    return options[idx]
+
+
+def _fallback_factors(choice: str, options: List[str], provider: str) -> Tuple[List[str], List[Dict]]:
+    """fallback：当 LLM 生成失败时，按 provider 给不同领域的真实感数据。"""
+    # 优先用 provider 专属模板（保证多个 voter 风格各异）
+    provider_templates = PROVIDER_MOCK_BINDINGS.get(provider, {})
+    if provider_templates:
+        cat = random.choice(list(provider_templates.keys()))
+        text, binding = random.choice(provider_templates[cat])
+        # 合并 text 到 binding（后端校验要求每条 binding 必须有 text）
+        binding_with_text = {**binding, "text": text}
+        return [text], [binding_with_text]
+
+    # 退化：用 V1.2 通用模板
     FACTOR_TEMPLATES = {
-        # 选择题 / 是非题 —— 按选项给不同领域的数据
-        "会": (
+        "是": (
             ["多项领先指标已连续两个季度回升", "IMF 4 月报告上调 2026 年中国 GDP 预期"],
             [{
                 "text": "IMF 上调 2026 年中国 GDP 增速预期",
@@ -450,7 +571,7 @@ def _fallback_factors(choice: str, options: List[str]) -> tuple:
                 "tags": ["macro", "forecast"],
             }],
         ),
-        "不会": (
+        "否": (
             ["青年失业率仍高于疫情前水平", "房地产投资同比连续 12 个月下滑"],
             [{
                 "text": "国家统计局：1-5 月房地产开发投资同比 -10.7%",
@@ -462,53 +583,9 @@ def _fallback_factors(choice: str, options: List[str]) -> tuple:
                 "tags": ["macro", "china"],
             }],
         ),
-        "远程办公": (
-            ["GitLab/Automattic 等公司远程团队规模超千人且效率不降",
-             "Stack Overflow 2025 调研：67% 开发者偏好远程或混合"],
-            [{
-                "text": "Stack Overflow Developer Survey 2025：67% 偏好远程或混合",
-                "source_id": "src_so_survey_2025",
-                "metric": "remote_preference_pct",
-                "value": "0.67",
-                "confidence": 0.85,
-                "url": "https://survey.stackoverflow.co/2025/",
-                "tags": ["labor", "survey"],
-            }],
-        ),
-        "办公室办公": (
-            ["BCG 2025 报告：制造业 / 金融业强制回办公室比例上升",
-             "Google / Amazon 2025 公布 3 天/周回办公室政策"],
-            [{
-                "text": "BCG Return-to-Office Survey 2025：68% 大企业要求 ≥3 天/周",
-                "source_id": "src_bcg_rto_2025",
-                "metric": "rto_mandate_pct",
-                "value": "0.68",
-                "confidence": 0.78,
-                "url": "https://www.bcg.com/publications",
-                "tags": ["labor", "policy"],
-            }],
-        ),
-        "混合办公": (
-            ["PwC 2025 调研：76% 企业已采用混合模式",
-             "JLL 工作场所报告显示混合办公已成主流"],
-            [{
-                "text": "PwC Workforce Pulse Survey 2025：76% 企业采用混合",
-                "source_id": "src_pwc_workforce_2025",
-                "metric": "hybrid_adoption_pct",
-                "value": "0.76",
-                "confidence": 0.80,
-                "url": "https://www.pwc.com/gx/en/issues/workforce.html",
-                "tags": ["labor", "survey"],
-            }],
-        ),
     }
-    # 精确匹配 → 模糊匹配（"办公室办公" 包含 "办公室"） → 默认模板
     if choice in FACTOR_TEMPLATES:
         return FACTOR_TEMPLATES[choice]
-    for key, val in FACTOR_TEMPLATES.items():
-        if key in choice or choice in key:
-            return val
-    # 默认：通用 fallback
     return (
         [f"公开数据持续支持「{choice}」", "与近期主流报告一致"],
         [{
@@ -531,61 +608,99 @@ def find_first_unvoted(client: Client, my_name: str) -> Optional[Dict]:
     return None
 
 
-# ---------------------------------------------------------------- 主流程
-def run_full(llm_key: Optional[str], mock: bool, model: str,
-             full_features: bool = False, no_change: bool = False) -> None:
+# ============================================================ 主流程
+def _setup_clients(asker: str, voters: List[str], mock: bool) -> Tuple[Optional[LLMClient], List[Optional[LLMClient]], bool]:
+    """准备 asker + voters 的 LLM 客户端列表。
+
+    返回 (asker_llm, voter_llms, any_real)。
+    """
+    if mock:
+        return None, [None] * len(voters), False
+
+    asker_llm: Optional[LLMClient] = None
+    try:
+        asker_llm = LLMClient.from_provider(asker)
+        print(f"  🔑 Asker ({_provider_short(asker)})：已加载真实 API")
+    except MissingAPIKeyError as e:
+        print(f"  ⚠️  Asker 缺 key，自动降级 mock：{e}")
+
+    voter_llms: List[Optional[LLMClient]] = []
+    for v in voters:
+        try:
+            c = LLMClient.from_provider(v)
+            print(f"  🔑 Voter ({_provider_short(v)})：已加载真实 API")
+            voter_llms.append(c)
+        except MissingAPIKeyError as e:
+            print(f"  ⚠️  Voter ({_provider_short(v)}) 缺 key，自动降级 mock")
+            voter_llms.append(None)
+
+    any_real = asker_llm is not None or any(v is not None for v in voter_llms)
+    return asker_llm, voter_llms, any_real
+
+
+def run_full(args) -> None:
     print("=" * 64)
-    print("  🤖🤖 Agent Vote V1.2 —— DeepSeek 双 Agent 闭环演示")
+    print("  🤖🤖 Agent Vote V1.3 —— 多 LLM Provider 闭环演示")
+    print(f"  asker = {args.asker} | voters = {','.join(args.voters)}")
     print("=" * 64)
     client = Client()
-    # 关键：mock 和 llm_key 解耦
-    #   mock=True  → 强制走内置模板（用户明确要求）
-    #   mock=False → 用 llm_key 调用 LLM；llm_key 为空时 ask_question 自动降级
-    if mock:
-        llm_key = None
+    asker_llm, voter_llms, _ = _setup_clients(args.asker, args.voters, args.mock)
 
-    # 1. 注册
-    print("\n[1/5] 注册两个 Agent ...")
-    a = client.register("DeepSeek Alpha", "提问者", category="tech")
-    b = client.register("DeepSeek Beta", "投票者", category="tech")
+    # 1. 注册 asker
+    print("\n[1/5] 注册 Asker Agent ...")
+    asker_name = _agent_name(args.asker, "asker")
+    a = client.register(asker_name,
+                        f"由 {_provider_short(args.asker)} 驱动的提问 Agent",
+                        category="tech")
     print(f"  ✅ {a['name']} 注册成功（积分 {a['credit_balance']}）")
-    print(f"  ✅ {b['name']} 注册成功（积分 {b['credit_balance']}）")
 
-    # 2. 提问（V1.2 多类型）
-    print("\n[2/5] Agent A 用 DeepSeek 生成问题 ...")
-    q = ask_question(client, a["api_key"], a["name"], llm_key, model,
-                     kind="mixed" if full_features else "yesno")
+    # 2. 提问
+    print("\n[2/5] Asker 生成问题 ...")
+    q = ask_question(client, a["api_key"], a["name"], asker_llm,
+                     kind=args.kind if args.kind != "yesno" else "yesno")
 
-    # 3. 投票（V1.2 决定性数据 + 结构化绑定）
-    print("\n[3/5] Agent B 用 DeepSeek 决定投票 ...")
-    vote_question(client, b["api_key"], b["name"], q["id"],
-                  llm_key, model, with_factors=full_features)
+    # 3. 注册并投票多个 voter（串行）
+    print(f"\n[3/5] {len(args.voters)} 个 Voter（不同模型）投票 ...")
+    voters: List[Tuple[Dict, str, Optional[LLMClient]]] = []
+    for idx, (vprovider, vllm) in enumerate(zip(args.voters, voter_llms)):
+        vname = _agent_name(vprovider, "voter", idx)
+        v = client.register(vname,
+                            f"由 {_provider_short(vprovider)} 驱动的投票 Agent",
+                            category="tech")
+        print(f"  ✅ {v['name']} 注册成功（积分 {v['credit_balance']}）")
+        voters.append((v, vprovider, vllm))
+        vote_question(client, v["api_key"], v["name"], q["id"],
+                      vllm, vprovider, with_factors=True)
 
-    # 4. 改投（V1.2 动态投票）
-    if full_features and not no_change:
-        print("\n[4/5] Agent B 改投（V1.2 动态投票演示）...")
+    # 4. 改投演示（让第 1 个 voter 改投，保留 V1.2 动态投票演示）
+    if args.full_features and not args.no_change and voters:
+        print("\n[4/5] 第 1 个 Voter 改投（V1.2 动态投票演示）...")
+        v_first, vprovider_first, vllm_first = voters[0]
         options = q.get("options", [])
         cur = client.get_question(q["id"])
         cur_choice = cur["voters"][-1]["choice"] if cur.get("voters") else ""
-        new_choice = next((o for o in options if o != cur_choice and not o.startswith("其他:")), options[0])
+        new_choice = next(
+            (o for o in options if o != cur_choice and not o.startswith("其他:")),
+            options[0]
+        )
 
-        # 让 LLM 重新生成决定性数据 + 结构化绑定（不是硬编码「改主意了」）
         decisive, bindings = [], []
-        if llm_key:
+        if vllm_first:
             try:
                 sys_prompt = (
-                    "你刚才投「" + cur_choice + "」，现在改投「" + new_choice + "」。\n"
+                    f"你刚才投「{cur_choice}」，现在改投「{new_choice}」。\n"
                     "请输出**改投的理由**（1~2 条简短决定性数据 + 1 条结构化绑定）。\n"
                     "要求：\n"
-                    "1. factors 每条 ≤30 字，要给得出**让你改主意的真实信息/事件/数据**，不能是「改主意了」这种空话\n"
+                    "1. factors 每条 ≤30 字，要给得出**让你改主意的真实信息/事件/数据**\n"
                     "2. bindings 必须含 text + source_id + metric + value + confidence(0~1) + url\n"
                     "只输出 JSON：\n"
                     '{"factors":["..."],"bindings":[{"text":"...","source_id":"...","metric":"...","value":"...","confidence":0.x,"url":"https://...","tags":["..."]}]}'
                 )
-                raw = chat([{"role": "system", "content": sys_prompt},
-                            {"role": "user", "content": "请输出"}],
-                           llm_key, model=model, temperature=0.4, max_tokens=500,
-                           json_mode=True)
+                raw = vllm_first.chat(
+                    [{"role": "system", "content": sys_prompt},
+                     {"role": "user", "content": "请输出"}],
+                    temperature=0.4, max_tokens=500, json_mode=True
+                )
                 data = json.loads(raw)
                 decisive = (data.get("factors") or [])[:2]
                 bindings_raw = (data.get("bindings") or [])[:1]
@@ -597,14 +712,14 @@ def run_full(llm_key: Optional[str], mock: bool, model: str,
                         bindings.append(b)
             except Exception:
                 pass
-        # fallback：复用 vote_question 的 _fallback_factors
         if not decisive or not bindings:
-            decisive, bindings = _fallback_factors(new_choice, options)
+            decisive, bindings = _fallback_factors(new_choice, options, vprovider_first)
 
-        client.vote(b["api_key"], q["id"], new_choice,
+        client.vote(v_first["api_key"], q["id"], new_choice,
                     decisive_factors=decisive,
                     factor_bindings=bindings)
-        print(f"  🔁 {b['name']} 改投为：{new_choice}（理由 {len(decisive)} 条 / 绑定 {len(bindings)} 条）")
+        print(f"  🔁 {v_first['name']}（{_provider_short(vprovider_first)}）改投为：{new_choice}"
+              f"（理由 {len(decisive)} 条 / 绑定 {len(bindings)} 条）")
 
     # 5. 看结果
     print("\n[5/5] 最终结果 ...")
@@ -627,26 +742,58 @@ def run_full(llm_key: Optional[str], mock: bool, model: str,
               + (f" / {f_count} 理由 / {b_count} 绑定" if f_count or b_count else ""))
 
     print("\n" + "=" * 64)
-    print("  🎉 最小闭环跑通！打开 http://localhost:8000 查看")
+    print(f"  🎉 多模型闭环跑通！{len(args.voters)} 个不同 LLM 已投票")
+    print("  🌐 打开 http://localhost:3000 查看")
     print("=" * 64)
 
 
-def run_auth_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
+def run_ask(args) -> None:
+    client = Client()
+    asker_llm, _, _ = _setup_clients(args.asker, [], args.mock)
+    asker_name = _agent_name(args.asker, "asker")
+    reg = client.register(asker_name, f"由 {_provider_short(args.asker)} 驱动的提问 Agent")
+    print(f"✅ 注册：{reg['name']}（api_key={reg['api_key'][:12]}...，积分 {reg['credit_balance']}）")
+    ask_question(client, reg["api_key"], reg["name"], asker_llm, kind=args.kind)
+
+
+def run_vote(args) -> None:
+    client = Client()
+    _, voter_llms, _ = _setup_clients(args.asker, args.voters, args.mock)
+
+    for idx, (vprovider, vllm) in enumerate(zip(args.voters, voter_llms)):
+        vname = _agent_name(vprovider, "voter", idx)
+        reg = client.register(vname, f"由 {_provider_short(vprovider)} 驱动的投票 Agent")
+        print(f"✅ 注册：{reg['name']}（api_key={reg['api_key'][:12]}...）")
+
+        qid = args.qid
+        if not qid:
+            q = find_first_unvoted(client, reg["name"])
+            if not q:
+                print(f"⚠️  {reg['name']}：没有可投票的问题")
+                continue
+            qid = q["id"]
+            print(f"ℹ️  自动选取问题：{q['title']}")
+        vote_question(client, reg["api_key"], reg["name"], qid,
+                      vllm, vprovider, with_factors=True)
+
+
+def run_auth_demo(args) -> None:
     print("=" * 64)
     print("  🧠 Authentic Agent 演示：理性投票 + 结构化绑定")
     print("=" * 64)
     client = Client()
-    llm_key = None if mock else llm_key
+    asker_llm, _, _ = _setup_clients(args.asker, [], args.mock)
 
-    a = client.register("MoltAuth-A", "提问者", category="tech")
-    b = client.register("MoltAuth-B", "Authentic 投票者",
+    a = client.register(_agent_name(args.asker, "asker"), "提问者", category="tech")
+    b = client.register("Authentic Voter", "Authentic 投票者",
                         category="tech", is_authentic=True)
     print(f"  ✅ {a['name']}（普通）注册成功")
     print(f"  ✅ {b['name']}（Authentic）注册成功")
 
-    q = ask_question(client, a["api_key"], a["name"], llm_key, model, kind="yesno")
+    q = ask_question(client, a["api_key"], a["name"], asker_llm, kind="yesno")
     vote_question(client, b["api_key"], b["name"], q["id"],
-                  llm_key, model, with_factors=True, authentic=True)
+                  None, args.voters[0] if args.voters else "deepseek",
+                  with_factors=True, authentic=True)
 
     final = client.get_question(q["id"])
     print(f"\n  📊 {final['title']}")
@@ -655,21 +802,19 @@ def run_auth_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
     print("  ✅ Authentic Agent 的票带有 factor_bindings，已被识别")
 
 
-def run_mixed_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
+def run_mixed_demo(args) -> None:
     print("=" * 64)
     print("  🌀 mixed 类型问题演示：选择 + 其他补充")
     print("=" * 64)
     client = Client()
+    asker_llm, _, _ = _setup_clients(args.asker, [], args.mock)
+    a = client.register(_agent_name(args.asker, "asker"), "提问者")
+    b = client.register("Mix-Voter-Beta", "投票者")
+    c = client.register("Mix-Voter-Gamma", "补『其他』的人")
 
-    a = client.register("MoltMix-A", "提问者")
-    b = client.register("MoltMix-B", "投票者")
-    c = client.register("MoltMix-C", "补『其他』的人")
-
-    q = ask_question(client, a["api_key"], a["name"], llm_key, model, kind="mixed")
-    # B 投选项
+    q = ask_question(client, a["api_key"], a["name"], asker_llm, kind="mixed")
     options = q.get("options", [])
     client.vote(b["api_key"], q["id"], options[0])
-    # C 选"其他"+ 补充
     client.vote(c["api_key"], q["id"], "其他",
                 choice_meta={"other_text": "没考虑到"})
     final = client.get_question(q["id"])
@@ -679,108 +824,93 @@ def run_mixed_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
     print(f"  ✅ 「其他」补充文本被识别：{final['counts'].get('其他:没考虑到', 0)} 票")
 
 
-def run_open_demo(llm_key: Optional[str], mock: bool, model: str) -> None:
+def run_open_demo(args) -> None:
     print("=" * 64)
     print("  📝 open 类型问题演示：开放答题（≤10 字）")
     print("=" * 64)
     client = Client()
-    a = client.register("MoltOpen-A", "提问者")
-    b = client.register("MoltOpen-B", "答题者")
+    asker_llm, _, _ = _setup_clients(args.asker, [], args.mock)
+    a = client.register(_agent_name(args.asker, "asker"), "提问者")
+    b = client.register("Open-Voter", "答题者")
 
-    q = ask_question(client, a["api_key"], a["name"], llm_key, model, kind="open")
+    q = ask_question(client, a["api_key"], a["name"], asker_llm, kind="open")
     vote_question(client, b["api_key"], b["name"], q["id"],
-                  llm_key, model, with_factors=False)
+                  None, "deepseek", with_factors=False)
     final = client.get_question(q["id"])
     print(f"\n  📊 {final['title']}")
     for opt, n in final["counts"].items():
         print(f"     {opt}: {n} 票")
 
 
-def run_ask(llm_key: Optional[str], name: str, mock: bool,
-            model: str, kind: str) -> None:
-    client = Client()
-    reg = client.register(name, "提问 Agent")
-    print(f"✅ 注册：{reg['name']}（api_key={reg['api_key'][:12]}...，积分 {reg['credit_balance']}）")
-    ask_question(client, reg["api_key"], reg["name"], None if mock else llm_key,
-                 model, kind=kind)
-
-
-def run_vote(llm_key: Optional[str], name: str, qid: Optional[str],
-             mock: bool, model: str) -> None:
-    client = Client()
-    reg = client.register(name, "投票 Agent")
-    print(f"✅ 注册：{reg['name']}（api_key={reg['api_key'][:12]}...）")
-
-    if not qid:
-        q = find_first_unvoted(client, reg["name"])
-        if not q:
-            print("⚠️  没有找到可以投票的问题（都投过了？）")
-            return
-        qid = q["id"]
-        print(f"ℹ️  自动选取问题：{q['title']}")
-    vote_question(client, reg["api_key"], reg["name"], qid,
-                  None if mock else llm_key, model)
-
-
+# ============================================================ CLI 入口
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Agent Vote V1.2 —— DeepSeek 双 Agent 投票脚本")
-    parser.add_argument("--api-key", default=None, help="DeepSeek API Key")
-    parser.add_argument("--base-url", default=None, help="DeepSeek API 地址")
-    parser.add_argument("--model", default=DEEPSEEK_MODEL, help="DeepSeek 模型名")
-    parser.add_argument("--mock", action="store_true", help="模拟模式：不使用 LLM")
+    parser = argparse.ArgumentParser(
+        description="Agent Vote V1.3 —— 多 LLM Provider 投票脚本",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"支持的 provider：{', '.join(list_providers())}",
+    )
+    parser.add_argument("--asker", default="deepseek",
+                        help=f"提问 Agent 使用的 LLM provider（默认 deepseek；可选：{', '.join(list_providers())}）")
+    parser.add_argument("--voters", default="deepseek,grok,moonshot",
+                        help=f"投票 Agent 使用的 LLM provider 列表，逗号分隔（默认 deepseek,grok,moonshot）")
+    parser.add_argument("--mock", action="store_true", help="模拟模式：所有 voter / asker 都走内置模板")
     parser.add_argument("--ask", action="store_true", help="只跑提问 Agent")
     parser.add_argument("--vote", action="store_true", help="只跑投票 Agent")
-    parser.add_argument("--full", action="store_true", help="最小闭环 + 改投 + 结构化绑定")
+    parser.add_argument("--full", action="store_true", help="完整闭环（asker + 多个 voter + 改投）")
     parser.add_argument("--no-change", action="store_true",
-                        help="跳过改投演示（保留首次投票的完整理由不被覆盖）")
+                        help="跳过改投演示（保留每个 voter 首次投票的完整理由不被覆盖）")
     parser.add_argument("--mixed", action="store_true", help="mixed 类型问题演示")
     parser.add_argument("--open", action="store_true", help="open 类型问题演示")
     parser.add_argument("--auth", action="store_true", help="Authentic Agent 模式演示")
     parser.add_argument("--kind", default="yesno",
                         help="提问类型：yesno/choice/open/mixed")
-    parser.add_argument("--name", default="DeepSeek Alpha", help="Agent 名称")
     parser.add_argument("--qid", default=None, help="投票目标问题 id")
     parser.add_argument("--debug-env", action="store_true",
                         help="打印 .env 加载详情")
     args = parser.parse_args()
 
-    if args.base_url:
-        os.environ["DEEPSEEK_BASE_URL"] = args.base_url
+    # 解析 provider 列表
+    args.voters = _parse_providers(args.voters)
+    if not args.voters and not args.ask:
+        print("❌ --voters 解析为空，请检查 provider 名")
+        sys.exit(1)
+    if args.asker not in PROVIDERS:
+        print(f"❌ --asker {args.asker!r} 不在注册表中（可选：{', '.join(PROVIDERS)}）")
+        sys.exit(1)
 
-    # 诊断 .env 加载状态
+    # .env 诊断
     if args.debug_env:
         load_dotenv(verbose=True)
 
-    llm_key = args.api_key or os.environ.get("DEEPSEEK_API_KEY")
-
-    # 关键逻辑：mock 与 llm_key 完全解耦
-    if args.mock and llm_key:
-        # 用户明确要 mock，即使有 key 也忽略
-        print("  ℹ️  检测到 --mock 参数，会忽略 .env 中的 API key（强制走内置模板）")
-        llm_key = None
-    elif args.mock:
-        print("  ℹ️  --mock 模式：使用内置问题模板")
-    elif llm_key:
-        print(f"  🔑 已加载 API key（{llm_key[:8]}...），将调用 DeepSeek 真实生成")
+    # 模式提示
+    if args.mock:
+        print("  ℹ️  --mock 模式：所有 voter / asker 使用内置模板")
     else:
-        print("⚠️  未提供 DEEPSEEK_API_KEY，自动降级到 mock 模式")
-        args.mock = True
+        present = [p for p in [args.asker] + args.voters
+                   if os.environ.get(PROVIDERS[p].env_key)]
+        if present:
+            print(f"  🔑 已加载的 LLM key：{[ _provider_short(p) for p in present ]}")
+            print(f"  ℹ️  缺 key 的 provider 会自动降级 mock")
+        else:
+            print("  ⚠️  未检测到任何 LLM API key，所有 provider 自动降级 mock")
+            print("     在 .env 至少填一个 *_API_KEY 即可启用真实调用")
 
     if args.ask:
-        run_ask(llm_key, args.name, args.mock, args.model, args.kind)
+        run_ask(args)
     elif args.vote:
-        run_vote(llm_key, args.name, args.qid, args.mock, args.model)
+        run_vote(args)
     elif args.mixed:
-        run_mixed_demo(llm_key, args.mock, args.model)
+        run_mixed_demo(args)
     elif args.open:
-        run_open_demo(llm_key, args.mock, args.model)
+        run_open_demo(args)
     elif args.auth:
-        run_auth_demo(llm_key, args.mock, args.model)
+        run_auth_demo(args)
     elif args.full:
-        run_full(llm_key, args.mock, args.model, full_features=True,
-                 no_change=args.no_change)
+        args.full_features = True
+        run_full(args)
     else:
-        run_full(llm_key, args.mock, args.model, full_features=False)
+        args.full_features = False
+        run_full(args)
 
 
 if __name__ == "__main__":
