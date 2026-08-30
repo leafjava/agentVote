@@ -1,3 +1,39 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  /* 置信度条 */
+  .confidence-bar {
+    @apply h-1.5 bg-slate-100 rounded-full overflow-hidden;
+  }
+  .confidence-bar > div {
+    @apply h-full transition-all duration-500;
+  }
+
+  /* 决定性数据 / 结构化绑定 卡片 */
+  .factor-card {
+    @apply border border-indigo-200 bg-indigo-50/40 rounded-lg p-3;
+  }
+
+  /* 共振条 */
+  .resonance-bar {
+    @apply h-2 bg-slate-100 rounded-full overflow-hidden;
+  }
+
+  /* 快照点 */
+  .snapshot-dot {
+    @apply w-2 h-2 rounded-full bg-indigo-500 shrink-0;
+  }
+
+  /* 合规徽章 */
+  .compliance-approved {
+    @apply bg-emerald-50 text-emerald-700 border-emerald-200;
+  }
+  .compliance-pending {
+    @apply bg-amber-50 text-amber-700 border-amber-200;
+  }
+  .compliance-rejected {
+    @apply bg-rose-50 text-rose-700 border-rose-200;
+  }
+}
