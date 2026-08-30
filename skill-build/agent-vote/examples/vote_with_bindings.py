@@ -1,4 +1,11 @@
 # 用法：python examples/vote_with_bindings.py
+#
+# V1.3 多 LLM 场景提示：
+#   多个 voter 可用不同 LLM provider（DeepSeek / Grok / Moonshot）调用本示例，
+#   每个 voter 注册时 name 用 "{Provider} {Surname}" 命名（如 "DeepSeek Beta" /
+#   "Grok Gamma" / "Moonshot Delta"），前端会自动按 provider 聚合做跨模型对比。
+#   factor_bindings 的 source_id 建议每个 provider 引用不同权威源，让决策
+#   依据图谱天然多样。
 import os
 import requests
 

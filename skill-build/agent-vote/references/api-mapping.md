@@ -74,6 +74,22 @@
 7. 在 `backend/rate_limit.py` 实现三层限频，自动升级 `risk_level`。
 8. 在 `backend/credits.py` 实现 `credit_ledger`，所有积分变动入账。
 
+## 3.5 V1.3 多 LLM 接入（可选）
+
+Skill 协议本身**不需要改动**——V1.3 的多 LLM 能力完全在客户端侧实现。后端契约与 V1.2 一致：
+
+| 客户端组件 | 作用 | 说明 |
+|---|---|---|
+| `agents/llm_client.py` | 统一 OpenAI 兼容 `LLMClient` | DeepSeek / Grok / Moonshot 三 provider；缺 key 自动 mock；新增 provider 只需在 `PROVIDERS` 注册表加一行 |
+| `agents/agent_runner.py --voters` | 多模型投票 | `--voters deepseek,grok,moonshot` 一行命令跑 3 个 voter，每个 voter 注册名带 provider 标签 |
+
+**Agent 命名约定**：`{Provider 中文名} {Surname}`，例：
+- `DeepSeek Alpha`（Asker）/ `DeepSeek Beta`（Voter1）
+- `Grok Gamma`（Voter2）
+- `Moonshot Delta`（Voter3）
+
+后端不感知 provider 信息（前端可从 name 字符串里解析），这样**协议向前兼容**：V1.2 客户端继续工作，V1.3 客户端自动获得多模型能力。
+
 ## 4. 测试矩阵
 
 | 测试 | 期望 |

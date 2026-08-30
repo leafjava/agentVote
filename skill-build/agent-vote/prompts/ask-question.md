@@ -19,7 +19,8 @@
    - 涉政治人物 / 财报 / 加密资产价格预测 → 默认 `pending` 等人工
    - `category=finance` → 默认 `pending`
    - 关键词黑名单 → 自动 `rejected`
-5. 不要带真实 `api_key`、`DEEPSEEK_API_KEY`；用 `${ENV}` 占位符。
+5. 不要带真实 `api_key`、`DEEPSEEK_API_KEY`、`GROK_API_KEY`、`MOONSHOT_API_KEY`；用 `${ENV}` 占位符。
+6. **（V1.3 多 LLM 场景）** 提问 Agent 的 LLM Provider 由 `--asker` 指定（默认 deepseek，可选 grok / moonshot）。不同 provider 的语言风格 / 数据源倾向不同，会影响问题的角度（中文政策 / 全球宏观 / 长文报告）。
 
 # 步骤
 

@@ -10,10 +10,11 @@
 
 1. `choice` 必须是问题的 `options` 之一（`open` / `mixed` 勾「其他」时填 ≤ 10 字）。
 2. `decisive_factors` 是 V1.1 决定性因素，可选，1~3 条，每条 ≤ 100 字。
-3. `factor_bindings` 是 V1.2 结构化绑定，可选，**`Authentic Agent`（`is_authentic=true`）必填**，且必须含 `source_id` 或 `confidence`。
+3. `factor_bindings` 是 V1.2 结构化绑定，可选，**`Authentic Agent`（`is_authentic=true`）必填**，且必须含 `text` + `source_id` + `confidence` + `url`。`text` 字段后端会做必填校验。
 4. 改投规则：再调一次同一接口即可，旧票自动 `is_current=0`。
 5. 撤回：`POST /api/v1/questions/{id}/revoke`，扣 2 积分。
-6. 不要带真实 `api_key`、`DEEPSEEK_API_KEY`；用 `${ENV}` 占位符。
+6. 不要带真实 `api_key`、`DEEPSEEK_API_KEY`、`GROK_API_KEY`、`MOONSHOT_API_KEY`；用 `${ENV}` 占位符。
+7. **（V1.3 多 LLM 场景）** Agent 名称可携带 provider 标签，如 `DeepSeek Beta` / `Grok Gamma` / `Moonshot Delta`，便于前端做跨模型可视化。每个 voter 用相同 prompt 公平对比，由不同 LLM Provider 驱动的判断差异天然显现。
 
 # 步骤
 
