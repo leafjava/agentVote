@@ -23,6 +23,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -42,6 +46,8 @@ from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent
 SKILL_FILE = BASE_DIR / "skill.md"
+REPO_ROOT = BASE_DIR.parent
+AGENT_RUNNER = REPO_ROOT / "agents" / "agent_runner.py"
 
 
 # ---------------------------------------------------------------- Lifespan
@@ -771,6 +777,119 @@ def skill_md():
     if not SKILL_FILE.exists():
         raise HTTPException(404, "skill.md 不存在")
     return SKILL_FILE.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------- Multi-LLM V1.3
+class MultiLLMVoteIn(BaseModel):
+    """触发多家 LLM Agent（DeepSeek Beta / Grok Gamma / Moonshot Delta）
+    自动注册并投票同一问题的请求体。"""
+    voters: Optional[List[str]] = None  # 默认 ["deepseek", "grok", "moonshot"]
+    mock: bool = False                  # True = 强制 mock（无 key 也能演示）
+    wait: bool = False                  # True = 同步等待（阻塞 ≤120s）
+
+
+@app.post("/api/v1/questions/{qid}/multi-llm-vote", tags=["questions"])
+def multi_llm_vote(qid: str, body: MultiLLMVoteIn = MultiLLMVoteIn()):
+    """一键让多家 LLM（DeepSeek Beta / Grok Gamma / Moonshot Delta）同时投票该问题。
+
+    **复用 `agents/agent_runner.py --vote` 的完整能力**：
+    - 自动注册 N 个 provider Agent（缺 key 自动降级 mock）
+    - 由各家 LLM 生成决定性数据 + factor_bindings
+    - 调 `POST /api/v1/questions/{qid}/vote` 落库
+
+    **使用场景**：在投票广场的每条问题卡片右侧加一个按钮，评委点一下
+    就触发 3 家 LLM 同时投票，立即看到「跨模型对比」效果。
+    """
+    voters = body.voters or ["deepseek", "grok", "moonshot"]
+    # 合法 provider 白名单
+    allowed = {"deepseek", "grok", "moonshot"}
+    voters = [v for v in voters if v in allowed]
+    if not voters:
+        raise HTTPException(400, f"voters 必须是非空子集 {sorted(allowed)}")
+    voters_str = ",".join(voters)
+
+    # 校验问题存在
+    with get_conn() as conn:
+        q = conn.execute("SELECT id, title, kind FROM questions WHERE id = ?", (qid,)).fetchone()
+        if not q:
+            raise HTTPException(404, f"问题 {qid} 不存在")
+
+    if not AGENT_RUNNER.exists():
+        raise HTTPException(
+            500,
+            f"agent_runner.py 未找到：{AGENT_RUNNER}（请确认仓库结构）",
+        )
+
+    # 透传环境变量（含 DEEPSEEK_API_KEY / GROK_API_KEY / MOONSHOT_API_KEY）
+    # + 强制 BASE_URL 指向本地后端
+    env = {**os.environ}
+    env["BASE_URL"] = f"http://127.0.0.1:8000"
+    # Windows 下避免子进程弹出 cmd 窗口
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+    cmd = [
+        sys.executable,
+        str(AGENT_RUNNER),
+        "--vote",
+        "--qid", qid,
+        "--voters", voters_str,
+    ]
+    if body.mock:
+        cmd.append("--mock")
+
+    if not body.wait:
+        # === 异步模式（默认）：立即返回，后台线程执行 ===
+        def _run_in_background():
+            try:
+                r = subprocess.run(
+                    cmd, cwd=str(REPO_ROOT),
+                    capture_output=True, text=True,
+                    env=env, timeout=180,
+                    encoding="utf-8", errors="ignore",
+                    creationflags=creationflags,
+                )
+                if r.returncode != 0:
+                    print(f"[multi-llm-vote] 后台执行 returncode={r.returncode}")
+                    print(f"  stderr: {r.stderr[-500:]}")
+            except Exception as e:
+                print(f"[multi-llm-vote] 后台执行异常: {e}")
+
+        threading.Thread(target=_run_in_background, daemon=True).start()
+        return {
+            "status": "started",
+            "qid": qid,
+            "title": q["title"],
+            "voters": voters,
+            "message": (
+                f"已触发 {len(voters)} 个 LLM Agent 投票 "
+                f"({', '.join(voters)})，请稍后刷新查看"
+            ),
+        }
+
+    # === 同步模式（wait=true）：阻塞最多 180s ===
+    try:
+        r = subprocess.run(
+            cmd, cwd=str(REPO_ROOT),
+            capture_output=True, text=True,
+            env=env, timeout=180,
+            encoding="utf-8", errors="ignore",
+            creationflags=creationflags,
+        )
+        return {
+            "status": "completed" if r.returncode == 0 else "failed",
+            "qid": qid,
+            "title": q["title"],
+            "voters": voters,
+            "returncode": r.returncode,
+            "stdout_tail": r.stdout[-3000:],
+            "stderr_tail": (r.stderr[-1500:] if r.returncode != 0 else ""),
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "LLM 投票超时（>180s）")
+    except Exception as e:
+        raise HTTPException(500, f"子进程执行失败：{e}")
 
 
 @app.get("/", tags=["meta"])

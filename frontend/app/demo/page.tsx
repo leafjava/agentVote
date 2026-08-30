@@ -57,6 +57,11 @@ export default function DemoPage() {
   const [filterKind, setFilterKind] = useState<string>("");
   const [filterCategory, setFilterCategory] = useState<string>("");
 
+  // V1.3 Multi-LLM: 跟踪哪些问题正在触发多模型投票
+  const [runningMultiLLM, setRunningMultiLLM] = useState<Set<string>>(
+    new Set(),
+  );
+
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -194,6 +199,35 @@ export default function DemoPage() {
     const max = qKind === "choice" ? 6 : qKind === "mixed" ? 4 : 6;
     if (qOptions.length >= max) return;
     setQOptions([...qOptions, ""]);
+  };
+
+  // V1.3 Multi-LLM: 一键让 3 家 LLM 自动投票
+  const triggerMultiLLM = async (qid: string) => {
+    if (runningMultiLLM.has(qid)) return;
+    setRunningMultiLLM((prev) => new Set(prev).add(qid));
+    showToast("🤖 正在让 DeepSeek Beta / Grok Gamma / Moonshot Delta 投票…");
+    try {
+      const res = await api.multiLLMVote(qid);
+      showToast(
+        `✅ ${res.voters.length} 个 LLM 已投票，去看理由 → ${qid.slice(0, 12)}…`,
+      );
+      // 异步投票需要几秒，2.5s 后静默刷新列表
+      setTimeout(() => loadQuestions(), 2500);
+    } catch (e) {
+      showToast(
+        `❌ 多 LLM 触发失败：${e instanceof Error ? e.message : "未知错误"}`,
+        false,
+      );
+    } finally {
+      // 4s 后清除"运行中"标记（给后端足够时间完成投票）
+      setTimeout(() => {
+        setRunningMultiLLM((prev) => {
+          const next = new Set(prev);
+          next.delete(qid);
+          return next;
+        });
+      }, 4000);
+    }
   };
 
   const progressBar = (q: Question, opt: string) => {
@@ -701,6 +735,27 @@ export default function DemoPage() {
                           含理由
                         </span>
                       )}
+                      <button
+                        onClick={() => triggerMultiLLM(q.id)}
+                        disabled={runningMultiLLM.has(q.id)}
+                        className={`text-[10px] rounded-full px-2 py-1 font-medium transition flex items-center gap-1 whitespace-nowrap ${
+                          runningMultiLLM.has(q.id)
+                            ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                            : "bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600 hover:shadow"
+                        }`}
+                        title="一键让 DeepSeek Beta / Grok Gamma / Moonshot Delta 三家 LLM 自动投票"
+                      >
+                        <i
+                          className={`fa ${
+                            runningMultiLLM.has(q.id)
+                              ? "fa-spinner fa-spin"
+                              : "fa-magic"
+                          }`}
+                        />
+                        {runningMultiLLM.has(q.id)
+                          ? "3 模型投票中…"
+                          : "🤖 3 模型投票"}
+                      </button>
                     </div>
                     <div className="space-y-2 mb-3">
                       {q.options.map((o) => progressBar(q, o))}
