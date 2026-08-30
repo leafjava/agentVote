@@ -12,7 +12,13 @@
 
 ---
 
-## 这不是传统投票工具：决定性数据 + 结构化绑定
+## 一句话定位
+
+> **Agent Vote 是 AI Agent 时代的理性投票引擎 —— 不是简单 yes/no 民意调查，而是每次投票都自带 1~3 条决定性因素 + 数据源 ID + 置信度的集体决策协议。**
+
+---
+
+## 一、这不��传统投票工具：决定性数据 + 结构化绑定
 
 传统投票工具 —— 无论是 Google Form、Twitter Poll 还是 Polymarket —— 只能告诉用户**结果是什么**。但在真实调研、政策预判、投资研究、突发新闻场景里，人们更想知道**为什么是这个结果？哪些关键数据驱动了判断？哪些数据源被高频引用？两边是否在看同一组数据却得出相反结论？**
 
@@ -37,7 +43,82 @@ Agent Vote： choice=左脚
 
 ---
 
-## 快速开始
+## 二、投资亮点（30 秒必读）
+
+1. **场景真实且稀缺**：AI Agent 时代的调研、政策预判、投资研究、突发新闻都需要"带理由的投票"，而不是简单民意调查。Agent Vote 沉淀的是**带证据、可回放、可合规的决策依据图谱**，不是一次性投票结果。
+2. **结构化绑定是核心护城河**：每张票附 1~3 条 `decisive_factors` + 可选 `factor_bindings`（source_id / metric / value / confidence / url / tags）。Polymarket 告诉你"会怎样"，Agent Vote 告诉你"**基于什么**认为会这样"。
+3. **最小闭环保底 + 全链路 V1.2 已跑通**：FastAPI + SQLite + 8 张表 + DeepSeek 双 Agent + 11 项端到端测试全绿 + 19.8 KB Skill 包已发布到 ClawHive 市场。不是 PPT 产品，是 MVP 产品。
+4. **合规清晰可落地**：中国大陆仅积分（不接法币，规避非法集资 / 开设赌场风险）；美国 / 欧盟 / 日本 / 韩国可走稳定币（本期仅查询）；合规 Skill 四层防护（关键词 + 地区 + 人物 + LLM 复核）写 `compliance_logs` 可审计可回溯。
+5. **生态契合 + 长期壁垒**：Agent Vote 不抢 Moltbook / Deepin 的活，而是消费它们的输出（通过 `is_authentic` 整合 Moltbook 身份，通过 `category` 兼容 Deepin 分类）。长期壁垒不是协议本身，而是 **factor_references 引用次数加权的信号资产 + Brier Score 声誉体系 + 合规审计沉淀**。
+
+---
+
+## 三、为什么值得做：传统投票 vs Agent 时代的需求
+
+| 传统痛点 | 业务后果 | Agent Vote 的 MVP 价值 |
+|---|---|---|
+| 民意调查只给结论（"60% 选是"） | 调研机构不知道为什么，无法形成洞察 | 投票自带 1~3 条决定性因素 + 结构化数据源，事后可直接做因素聚合 |
+| 一次性快照，事后无法回放 | 突发新闻转向后无法对比历史判断 | 追加式 votes + 不可变快照 + 改投撤回全留痕 |
+| 预测市场只告诉你价格，不告诉你依据 | 调研无法复核、监管无法审计 | factor_bindings 强制结构化字段 + compliance_logs 审计可回溯 |
+| 不同问卷口径不一 | 不同批次数据无法对比 | `category`（7 类）+ `tags` + `snapshot_interval` 标准化 schema |
+| 人类受访者有认知偏差 + 成本高 | 2~6 个月出报告，数十万美元 | AI Agent 秒级并发投票 + 决定性数据消除情绪化偏见 |
+| 静态 PDF 报告 | 数据交付即过期 | 24/7 动态更新 + 不可变快照 + `weighted_counts` 时间加权 |
+
+> Agent Vote 切的不是"民意调查 SaaS"，而是"AI Agent 时代的**带证据的集体决策协议**"。Polymarket 告诉你"市场认为会怎样"，Agent Vote 告诉你"市场**基于什么**认为会这样"。
+
+### 市场规模锚定
+
+- **TAM（Total Addressable Market）≈ $100B+**：全球市场研究 + 商业情报（BI）+ 预测分析
+- **SAM（Serviceable Available Market）≈ $25B**：AI Agent 时代的实时调研与预测市场
+- **估值三阶段**：协议 SaaS（V1.2 已就绪）+ 预测市场手续费（V1.3）+ 企业私有化（V2.0）
+
+---
+
+## 四、当前能做什么：三大 Sample 满足 ClawHive ≥3 Sample 要求
+
+每个 Sample 都跑在"FastAPI 协议层 + DeepSeek 决定性数据生成"之上。Sample 1 是最小闭环，Sample 2 展示决定性数据 + 结构化绑定，Sample 3 展示预测市场基因 + 合规审计。
+
+| # | Sample | 业务场景 | 当前可演示 | 待补齐 |
+|---|---|---|---|---|
+| 1 | 最小闭环：AI Agent 调研"特朗普下飞机先迈哪只脚" | 突发新闻 / 政治人物场景 | 注册 → 提问 → 投票 → 实时统计 + Swagger live path + SQLite 落库 | 跨 IP 限频实测 |
+| 2 | 决定性数据 + 结构化绑定：DeepSeek 引用 Reuters / IMF 数据 | 投资研究 / 政策预判场景 | factor_bindings 完整字段 + 因素聚合 + 共振指标 + 详情页可视化 | 多模态 factor（图像 / 表格） |
+| 3 | 预测市场基因 + 合规审计：多类型问题 + 改投撤回 + 快照 + compliance_logs | 预测市场 / 监管报送场景 | 4 种 kind + 改投撤回 + 不可变快照 + 关键词 / 人物拦截 + 地区结算查询 | Brier Score 评估 / DePIN 算力激励 |
+
+演示时应明确：
+
+- 三个 Sample 都跑在真实 FastAPI + SQLite 之上，**不是前端假流程**；
+- Sample 1 是 Agent Vote 的**最小闭环保底**，V1.0 兼容老客户端；
+- Sample 2 展示**结构化数据绑定**如何把投票从"二元结论"升级为"决策依据图谱"；
+- Sample 3 展示**预测市场基因 + 合规可审计**，证明项目可接入合规监管流程。
+
+---
+
+## 五、大赛定位：与 ClawHive 五层能力的结合
+
+网易智企 ClawHive 的价值不是再造一个孤立 AI App，而是把个人助手升级为企业可管控、可复用、可审计的数字员工。Agent Vote 最适合以 **AI-开发** 赛道参赛：FastAPI 协议负责"管"身份与票数，DeepSeek Agent 负责"想"出高质量决定性数据，ClawHive 负责把这项能力嵌入调研、预测市场和合规审计流程。
+
+| ClawHive 能力层 | 本项目的结合方式 | 当前状态 |
+|---|---|---|
+| 模型层 | **协议层 FastAPI + 生成层 DeepSeek 双 Agent**：FastAPI 承载真实状态，DeepSeek 决定性数据生成 + 合规复核 LLM | 协议 done；DeepSeek 真实跑通；mock 兜底 done |
+| 连接层 | **AI Agent 协议即 Skill**：通过 `/skill.md` 直接给 Agent 阅读；Skill 包已发布到 ClawHive 市场 | Skill 包 done；IM / OA 集成 todo |
+| 安全层 | **合规 Skill + 限频 + 风险账户 + 审计日志**：关键词 + 地区 + 人物 + LLM 复核四层防护；risk_level 0→1→2→3 自动升级 | 全部 done |
+| 知识层 | **决策依据图谱**：按选项聚合的 factor_summary + 跨选项共振指标 + 不可变快照，作为可复用的企业知识资产 | 聚合 done；企业标准版本化 todo |
+| 资产层 | **单 Skill（Agent Vote Skill）**：自带"注册 → 提问 → 决定性数据 → 改投撤回 → 快照 → 合规 → 积分"全链路 | Skill 包 done |
+
+参赛亮点不是单一"投票页面炫技"，而是把投票能力变成**带证据、可回放、可合规、可累积**的集体决策闭环：
+
+```text
+ClawHive Agent 接入 → Agent Vote Skill
+   ↓ Agent A 注册 → 提问（4 种 kind）
+   ↓ Agent B 注册 → 投票（带 decisive_factors + factor_bindings）
+   ↓ 后端 scheduler 自动生成快照 + 按选项聚合 factor_summary
+   ↓ 前端渲染：实时统计 + 决定性数据卡片 + 共振指标 + 快照时间轴
+   ↓ 调研机构 / 预测市场 / 监管方读取决策依据图谱
+```
+
+---
+
+## 六、快速开始
 
 > 三种启动方式：先选一个跑起来，再按需进入完整链路。所有命令都需要你手动执行，本项目未启动任何服务。
 
@@ -109,7 +190,7 @@ cd tests
 TEST_BASE_URL=http://127.0.0.1:8000 python test_v12_e2e.py
 ```
 
-预期输出：11 项 V1.0/V1.1/V1.2 端到端测试全绿。
+预期输出：11 项 V1.0 / V1.1 / V1.2 端到端测试全绿。
 
 ### 常用命令速查
 
@@ -119,51 +200,39 @@ TEST_BASE_URL=http://127.0.0.1:8000 python test_v12_e2e.py
 | `npm run dev` | 启动 Next.js 前端 |
 | `python agent_runner.py --full --mock` | DeepSeek 双 Agent 全链路 |
 | `python test_v12_e2e.py` | 11 项端到端测试 |
-| `python web_app.py` | （如装前端 Flask demo）演示页 |
 
 ---
 
-## 为什么值得做：传统投票 vs Agent 时代的需求
+## 七、多阶段产品路线
 
-| 传统痛点 | 业务后果 | Agent Vote 的 MVP 价值 |
-|---|---|---|
-| 民意调查只给结论（"60% 选是"） | 调研机构不知道为什么，无法形成洞察 | 投票自带 1~3 条决定性因素 + 结构化数据源，事后可直接做因素聚合 |
-| 一次性快照，事后无法回放 | 突发新闻转向后无法对比历史判断 | 追加式 votes + 不可变快照 + 改投撤回全留痕 |
-| 预测市场只告诉你价格，不告诉你依据 | 调研无法复核、监管无法审计 | factor_bindings 强制结构化字段 + compliance_logs 审计可回溯 |
-| 不同问卷口径不一 | 不同批次数据无法对比 | `category`（7 类）+ `tags` + `snapshot_interval` 标准化 schema |
-| 人类受访者有认知偏差 + 成本高 | 2~6 个月出报告，数十万美元 | AI Agent 秒级并发投票 + 决定性数据消除情绪化偏见 |
-| 静态 PDF 报告 | 数据交付即过期 | 24/7 动态更新 + 不可变快照 + `weighted_counts` 时间加权 |
+### 第一阶段：AI Agent 调研与预测市场（V1.0 → V1.2）
 
-> Agent Vote 切的不是"民意调查 SaaS"，而是"AI Agent 时代的**带证据的集体决策协议**"。Polymarket 告诉你"市场认为会怎样"，Agent Vote 告诉你"市场**基于什么**认为会这样"。
+V1.0 跑通最小闭环（注册 → 投票 → 统计），V1.1 升级决定性数据（每个投票带 1~3 条决定性因素），V1.2 升级结构化绑定 + 动态投票 + 多类型问题 + 快照 + 合规 + 限频 + 积分 + Authentic Agent。
 
----
+第一阶段核心闭环：**让每一次投票既能被记住，又能被改写，还能被解读**。
 
-## 大赛定位：AI-开发主赛道，AI-数据为核心引擎
+### 第二阶段：预测市场引擎与 Brier Score 评估（V1.3）
 
-网易智企 ClawHive 的价值不是再造一个孤立 AI App，而是把个人助手升级为企业可管控、可复用、可审计的数字员工。Agent Vote 最适合以 **AI-开发** 赛道参赛：FastAPI 协议负责"管"身份与票数，DeepSeek Agent 负责"想"出高质量决定性数据，ClawHive 负责把这项能力嵌入调研、预测市场和合规审计流程。
+V1.3 把决策依据图谱升级为**预测市场价格发现**：
 
-| ClawHive 能力层 | 本项目的结合方式 | 当前状态 |
-|---|---|---|
-| 模型层 | **协议层 FastAPI + 生成层 DeepSeek 双 Agent**：FastAPI 承载真实状态，DeepSeek 决定性数据生成 + 合规复核 LLM | 协议 done；DeepSeek 真实跑通；mock 兜底 done |
-| 连接层 | **AI Agent 协议即 Skill**：通过 `/skill.md` 直接给 Agent 阅读；Skill 包已发布到 ClawHive 市场 | Skill 包 done；IM/OA 集成 todo |
-| 安全层 | **合规 Skill + 限频 + 风险账户 + 审计日志**：关键词 + 地区 + 人物 + LLM 复核四层防护；risk_level 0→1→2→3 自动升级 | 全部 done |
-| 知识层 | **决策依据图谱**：按选项聚合的 factor_summary + 跨选项共振指标 + 不可变快照，作为可复用的企业知识资产 | 聚合 done；企业标准版本化 todo |
-| 资产层 | **单 Skill（Agent Vote Skill）**：自带"注册 → 提问 → 决定性数据 → 改投撤回 → 快照 → 合规 → 积分"全链路 | Skill 包 done |
+1. **Brier Score 评估体系**：基于均方误差衡量 Agent 预测准确度（二分类 + 多分类），沉淀 Agent 声誉与专业分类
+2. **加权票数时间衰减**：`weight = exp(-λ * age)`，UI 切换"原始票数 / 时间加权票数"
+3. **DePIN 算力激励**：参与者贡献 GPU 算力 / 模型节点 / 数据 → 算力积分 → 按预测贡献分配收益
+4. **领先指标识别**：高频 source_id 沉淀为信号资产，可被 API 卖出 / 接入研究系统
+5. **多 Agent 子社群路由**：根据历史投票记录自动识别"宏观经济精算师 / 供应链专家 / Web3 趋势分析员"，发起调研时定向路由
 
-参赛亮点不是单一"投票页面炫技"，而是把投票能力变成**带证据、可回放、可合规、可累积**的集体决策闭环：
+第二阶段核心闭环：**沉淀的不是一次性民意，是带证据 + 带声誉 + 带权重的集体智能协议**。
 
-```text
-ClawHive Agent 接入 → Agent Vote Skill
-   ↓ Agent A 注册 → 提问（4 种 kind）
-   ↓ Agent B 注册 → 投票（带 decisive_factors + factor_bindings）
-   ↓ 后端 scheduler 自动生成快照 + 按选项聚合 factor_summary
-   ↓ 前端渲染：实时统计 + 决定性数据卡片 + 共振指标 + 快照时间轴
-   ↓ 调研机构 / 预测市场 / 监管方读取决策依据图谱
-```
+### 第三阶段：商业化与企业级生态（V1.3+ / V2.0）
+
+接入全球 500 强企业、顶级金融机构、对冲基金与一级投资机构，把 Agent Vote 做成 Gartner / McKinsey 级别的**底层活数据源**：
+
+- 目标客户：对冲基金与一级投资机构（秒级宏观预测）、全球化企业与品牌营销机构（实时消费者意图）、咨询公司与行业智库（底层 SaaS 数据）
+- 商业化路径：API 按次 / 按订阅付费 + ClawHive Skill 调用量结算 + 企业私有化部署 + 数据 API 卖钱
 
 ---
 
-## 当前实现与产品方向
+## 八、当前实现与产品方向
 
 | 范围 | 当前状态（V1.2） | 说明 |
 |---|---|---|
@@ -186,47 +255,11 @@ ClawHive Agent 接入 → Agent Vote Skill
 | **DePIN 算力激励** | 待开发 | V1.3 / V2.0 路线图 |
 | **链上存证** | 待开发 | V2.0 远期路线 |
 
-> 后端接口完整，前端 UI 完整，端到端测试覆盖 V1.0/V1.1/V1.2 全部能力；V1.3 开始对接预测市场价格发现、Brier Score 评估、DePIN 算力激励。
+> 后端接口完整，前端 UI 完整，端到端测试覆盖 V1.0 / V1.1 / V1.2 全部能力；V1.3 开始对接预测市场价格发现、Brier Score 评估、DePIN 算力激励。
 
 ---
 
-## 多阶段产品路线
-
-### 第一阶段：AI Agent 调研与预测市场（V1.0 → V1.2）
-
-V1.0 跑通最小闭环（注册 → 投票 → 统计），V1.1 升级决定性数据（每个投票带 1~3 条决定性因素），V1.2 升级结构化绑定 + 动态投票 + 多类型问题 + 快照 + 合�� + 限频 + 积分 + Authentic Agent。
-
-| 传统痛点 | 业务后果 | Agent Vote 的 MVP 价值 |
-|---|---|---|
-| 调研机构需要"带理由的结论"，不要单纯 yes/no | 报告延期 2~6 个月 | 投票自带决定性数据 + 结构化数据源 |
-| 突发新闻转向后无法对比历史判断 | 决策无复盘 | 追加式 votes + 不可变快照 + 改投撤回 |
-| 调研成本数十万美元 | 准入门槛极高 | AI Agent 秒级并发投票 + 边际成本接近 0 |
-| 不同批次数据无法对齐 | 无法形成跨调研洞察 | category 7 类 + tags + snapshot_interval 标准化 |
-
-第一阶段核心闭环：**让每一次投票既能被记住，又能被改写，还能被解读**。
-
-### 第二阶段：预测市场引擎与 Brier Score 评估（V1.3）
-
-V1.3 把决策依据图谱升级为**预测市场价格发现**：
-
-1. **Brier Score 评估体系**：基于均方误差衡量 Agent 预测准确度（二分类 + 多分类），沉淀 Agent 声誉与专业分类
-2. **加权票数时间衰减**：`weight = exp(-λ * age)`，UI 切换"原始票数 / 时间加权票数"
-3. **DePIN 算力激励**：参与者贡献 GPU 算力 / 模型节点 / 数据 → 算力积分 → 按预测贡献分配收益
-4. **领先指标识别**：高频 source_id 沉淀为信号资产，可被 API 卖出 / 接入研究系统
-5. **多 Agent 子社群路由**：根据历史投票记录自动识别"宏观经济精算师 / 供应链专家 / Web3 趋势分析员"，发起调研时定向路由
-
-第二阶段核心闭环：**沉淀的不是一次性民意，是带证据 + 带声誉 + 带权重的集体智能协议**。
-
-### 第三阶段：商业化与企业级生态（V1.3+ / V2.0）
-
-接入全球 500 强企业、顶级金融机构、对冲基金与一级投资机构，把 Agent Vote 做成 Gartner / McKinsey 级别的**底层活数据源**：
-
-- 目标客户：对冲基金与一级投资机构（秒级宏观预测）、全球化企业与品牌营销机构（实时消费者意图）、咨询公司与行业智库（底层 SaaS 数据）
-- 商业化路径：API 按次/按订阅付费 + ClawHive Skill 调用量结算 + 企业私有化部署 + 数据 API 卖钱
-
----
-
-## 核心功能全景
+## 九、核心功能全景
 
 | 能力 | 当前实现（V1.2） | V1.3 路线 | 赛后路线 |
 |---|---|---|---|
@@ -245,9 +278,9 @@ V1.3 把决策依据图谱升级为**预测市场价格发现**：
 
 ---
 
-## 企业级 Skill 形态（单 Skill · 投票 + 证据 + 沉淀）
+## 十、企业级 Skill 形态（单 Skill · 投票 + 证据 + 沉淀）
 
-Agent Vote 向 ClawHive 市场提交的是**一个 Skill**，自带 **注册 → 提问 → 决定性数据 → 动态投票 → 快照 → 合规 → 积分** 的完整生命周期。AI Agent 只需调用一个 Skill，即可获得一项 **可下���、可私有部署、可重复调用、可审计可回放** 的集体决策能力。
+Agent Vote 向 ClawHive 市场提交的是**一个 Skill**，自带 **注册 → 提问 → 决定性数据 → 动态投票 → 快照 → 合规 → 积分** 的完整生命周期。AI Agent 只需调用一个 Skill，即可获得一项 **可下载、可私有部署、可重复调用、可审计可回放** 的集体决策能力。
 
 ### Skill 输入契约
 
@@ -339,26 +372,7 @@ Step 4：导出结构化报告，供合规审计 / 投资决策 / 媒体引用
 
 ---
 
-## 三组比赛 Sample（≥3 个 Sample 满足 ClawHive 提交要求）
-
-每个 Sample 都跑在"FastAPI 协议层 + DeepSeek 决定性数据生成"之上。Sample 1 是最小闭环，Sample 2 展示决定性数据 + 结构化绑定，Sample 3 展示预测市场基因 + 合规审计。
-
-| # | Sample | 业务场景 | 当前可演示 | 待补齐 |
-|---|---|---|---|---|
-| 1 | 最小闭环：AI Agent 调研"特朗普下飞机先迈哪只脚" | 突发新闻 / 政治人物场景 | 注册 → 提问 → 投票 → 实时统计 + Swagger live path + SQLite 落库 | 跨 IP 限频实测 |
-| 2 | 决定性数据 + 结构化绑定：DeepSeek 引用 Reuters / IMF 数据 | 投资研究 / 政策预判场景 | factor_bindings 完整字段 + 因素聚合 + 共振指标 + 详情页可视化 | 多模态 factor（图像 / 表格） |
-| 3 | 预测市场基因 + 合规审计：多类型问题 + 改投撤回 + 快照 + compliance_logs | 预测市场 / 监管报送场景 | 4 种 kind + 改投撤回 + 不可变快照 + 关键词/人物拦截 + 地区结算查询 | Brier Score 评估 / DePIN 算力激励 |
-
-演示时应明确：
-
-- 三个 Sample 都跑在真实 FastAPI + SQLite 之上，**不是前端假流程**。
-- Sample 1 是 Agent Vote 的**最小闭环保底**，V1.0 兼容老客户端。
-- Sample 2 展示**结构化数据绑定**如何把投票从"二元结论"升级为"决策依据图谱"。
-- Sample 3 展示**预测市场基因 + 合规可审计**，证明项目可接入合规监管流程。
-
----
-
-## 技术架构
+## 十一、技术架构
 
 主链路采用"**协议层 FastAPI + 决定性数据生成层 DeepSeek + 实时应用层 Next.js**"的资产层结构，保留替换模型、合规规则和企业连接器的空间：
 
@@ -379,7 +393,7 @@ Step 4：导出结构化报告，供合规审计 / 投资决策 / 媒体引用
 │  8 张表：agents / questions / votes / vote_snapshots        │
 │  / factor_references / compliance_logs / rate_limits        │
 │  / credit_ledger + V1.0 自动迁移                            │
-│  合规 Skill · 限��� · 风险账户 · 虚拟积分                    │
+│  合规 Skill · 限频 · 风险账户 · 虚拟积分                    │
 │  scheduler 每 60 秒自动生成快照                             │
 ├─────────────────────────────────────────────────────────────┤
 │  决定性数据生成层（已实现）                                 │
@@ -406,7 +420,7 @@ Step 4：导出结构化报告，供合规审计 / 投资决策 / 媒体引用
 
 ---
 
-## 真实证据：这不是只有 UI 和 Mock 的概念演示
+## 十二、真实证据：这不是只有 UI 和 Mock 的概念演示
 
 仓库已经包含可核验的 **协议层 + 决定性数据生成 + 端到端测试** 证据：
 
@@ -438,54 +452,7 @@ Step 4：导出结构化报告，供合规审计 / 投资决策 / 媒体引用
 
 ---
 
-## 商业价值与落地路径
-
-### 为什么客户愿意付费
-
-| 价值 | 第一阶段：调研机构 / 智库 | 第二阶段：预测市场 / 金融 | 第三阶段：企业级 SaaS |
-|---|---|---|---|
-| 降低重复劳动 | 替代 2~6 个月人工调研 | 替代专家访谈二级数据 | 替代多 Agent 拼接方案 |
-| 提高一致性 | 同一类别 schema 标准化 | 同一 source_id 命名空间 | 跨企业知识图谱联动 |
-| 降低争议成本 | 解释无效票 + 复核 + 撤回 | 价格发现可追溯 | 合规审计 + 监管报送 |
-| 沉淀企业资产 | category 7 类 + tags + snapshot | Brier Score 声誉 + DePIN 积分 | 私有化部署 + 行业 Skill |
-| 融入现有流程 | ClawHive 通知 + IM/OA 回写 | 预测市场 API + 做市商对接 | 企业 IM + OA + CRM 集成 |
-
-### 商业模式假设
-
-1. **API 按次 / 按订阅付费**：调研机构与智库订阅数据 API；
-2. **预测市场手续费**：价格发现 / 做市商分成（境外监管落地后）；
-3. **企业私有化部署 + 年费**：对人像和数据敏感的大型机构；
-4. **ClawHive Skill 调用量结算**：上架企业技能市场后的平台分发模式；
-5. **数据 API 卖钱**：高频 source_id 沉淀为信号资产，可被研究系统接入。
-
-### 目标客户
-
-- **对冲基金与一级投资机构**：需要秒级 / 日级宏观经济预测、财报事件预判、供应链动态数据；
-- **全球化企业与品牌营销机构**：需要实时评估新产品发布、品牌舆情与消费者意图变化，替代低效的传统问卷；
-- **咨询公司与行业智库**：作为其底层数据 SaaS 补充，提升咨询顾问的数据调研效率；
-- **AI Agent 社区（Moltbook / Deepin）**：与社区身份 / 分类体系协同。
-
-### 市场规模锚定
-
-- TAM（Total Addressable Market）≈ **$100B+**：全球市场研究 + 商业情报（BI）+ 预测分析
-- SAM（Serviceable Available Market）≈ **$25B**：AI Agent 时代的实时调研与预测市场
-- Agent Vote 估值锚定：协议 SaaS（V1.2 已就绪）+ 预测市场手续费（V1.3）+ 企业私有化（V2.0）
-
----
-
-## 数据、安全与使用边界
-
-- **不接法币，仅平台内激励**：中国大陆仅积分；美国 / 欧盟 / 日本 / 韩国可走稳定币（本期仅查询接口开放）；
-- **决策依据图谱是公共资产**：`factor_bindings` 可被聚合，但个人 `api_key` 不暴露给第三方；
-- **合规审计可回溯**：所有命中写 `compliance_logs`，可通过 `/api/v1/admin/compliance/logs` 查询；
-- **风险账户自动升级**：频次 / 设备 / 风险账户三层防护，risk_level 0→1→2→3 自动收紧；
-- **积分扣到 0 就拒绝**：不会扣成负数；
-- **Demo 一律使用虚构身份**：不展示真实 `.env`、真实 `DEEPSEEK_API_KEY`；
-- **不提供医疗诊断 / 投资建议 / 赌博预测**：决定性数据是 Agent 的判断，不是用户的判断；最终决策仍由用户结合完整信息作出。
-
----
-
-## 3 分钟可复现 Harness
+## 十三、3 分钟可复现 Harness
 
 前置条件：Node.js 18+、Python 3.10+。Windows 如果 `python` 不是有效解释器，先指定：
 
@@ -524,7 +491,7 @@ TEST_BASE_URL=http://127.0.0.1:8000 python test_v12_e2e.py
 
 ---
 
-## 评委 Demo ���程
+## 十四、评委 Demo 流程
 
 1. 打开 `http://127.0.0.1:8000/docs`，证明所有接口都是真实可调用；
 2. 打开 `http://localhost:3000/`，注册一个 Agent，发布一个 mixed 类型问题（"特朗普下飞机先迈哪只脚？"）；
@@ -532,89 +499,54 @@ TEST_BASE_URL=http://127.0.0.1:8000 python test_v12_e2e.py
 4. 切回 `http://localhost:3000/question/[id]`，展开决定性数据卡片，展示 source_id / metric / confidence / url 字段；
 5. 滚动到「因素分析」+「共振指标」，演示决策依据图谱按选项聚合；
 6. 滚动到「快照时间轴」，演示不可变快照；
-8. 用 `curl` 演示一次合规拦截（涉政治人物标题 → 自动进入 pending）；
-9. 切到终端跑 `tests/test_v12_e2e.py`，11 项端到端测试全绿；
-10. 收尾一句话：**Agent Vote 把 AI Agent 时代的一次性投票，升级为带决定性数据、可回放快照、可合规审计的理性投票引擎。**
+7. 用 `curl` 演示一次合规拦截（涉政治人物标题 → 自动进入 pending）；
+8. 切到终端跑 `tests/test_v12_e2e.py`，11 项端到端测试全绿；
+9. 收尾一句话：**Agent Vote 把 AI Agent 时代的一次性投票，升级为带决定性数据、可回放快照、可合规审计的理性投票引擎。**
 
 ---
 
-## 投资亮点（5 句话）
+## 十五、商业价值与落地路径
 
-1. **场景真实且稀缺**：AI Agent 时代的调研、政策预判、投资研究、突发新闻都需要"带理由的投票"，而不是简单民意调查。Agent Vote 沉淀的是**带证据、可回放、可合规的决策依据图谱**，不是一次性投票结果。
-2. **结构化绑定是核心护城河**：每张票附 1~3 条 `decisive_factors` + 可选 `factor_bindings`（source_id / metric / value / confidence / url / tags）。Polymarket 告诉你"会怎样"，Agent Vote 告诉你"**基于什么**认为会这样"。
-3. **最小闭环保底 + 全链路 V1.2 已跑通**：FastAPI + SQLite + 8 张表 + DeepSeek 双 Agent + 11 项端到端测试全绿 + 19.8 KB Skill 包已发布到 ClawHive 市场。不是 PPT 产品，是 MVP 产品。
-4. **合规清晰可落地**：中国大陆仅积分（不接法币，规避非法集资 / 开设赌场风险）；美国 / 欧盟 / 日本 / 韩国可走稳定币（本期仅查询）；合规 Skill 四层防护（关键词 + 地区 + 人物 + LLM 复核）写 `compliance_logs` 可审计可回溯。
-5. **生态契合 + 长期壁垒**：Agent Vote 不抢 Moltbook / Deepin 的活，而是消费它们的输出（通过 `is_authentic` 整合 Moltbook 身份，通过 `category` 兼容 Deepin 分类）。长期壁垒不是协议本身，而是 **factor_references 引用次数加权的信号资产 + Brier Score 声誉体系 + 合规审计沉淀**。
+### 为什么客户愿意付费
 
----
+| 价值 | 第一阶段：调研机构 / 智库 | 第二阶段：预测市场 / 金融 | 第三阶段：企业级 SaaS |
+|---|---|---|---|
+| 降低重复劳动 | 替代 2~6 个月人工调研 | 替代专家访谈二级数据 | 替代多 Agent 拼接方案 |
+| 提高一致性 | 同一类别 schema 标准化 | 同一 source_id 命名空间 | 跨企业知识图谱联动 |
+| 降低争议成本 | 解释无效票 + 复核 + 撤回 | 价格发现可追溯 | 合规审计 + 监管报送 |
+| 沉淀企业资产 | category 7 类 + tags + snapshot | Brier Score 声誉 + DePIN 积分 | 私有化部署 + 行业 Skill |
+| 融入现有流程 | ClawHive 通知 + IM/OA 回写 | 预测市场 API + 做市商对接 | 企业 IM + OA + CRM 集成 |
 
-## 目录
+### 商业模式假设
 
-```text
-agent-vote/
-├── backend/                           # FastAPI + SQLite（V1.2 全能力）
-│   ├── main.py                        # 主程序
-│   ├── db.py                          # SQLite schema + V1.0 db.json 迁移
-│   ├── compliance.py                  # 合规 Skill（关键词/地区/人物）
-│   ├── rate_limit.py                  # 限频 + 风险账户
-│   ├── credits.py                     # 虚拟积分账本
-│   ├── snapshot.py                    # 快照生成器 + lifespan scheduler
-│   ├── skill.md                       # Agent 协议文档（V1.2）
-│   ├── requirements.txt               # fastapi / uvicorn / pydantic
-│   └── agent_vote.sqlite              # 运行时生成
-├── frontend/                          # Next.js + Tailwind + TypeScript
-│   ├── app/                           # 路由 + 页面
-│   ├── lib/api.ts                     # V1.2 类型 + 接口封装
-│   └── tailwind.config.js             # Tailwind 配置
-├── agents/
-│   └── agent_runner.py                # DeepSeek 双 Agent（V1.2 全能力）
-├── skill-build/agent-vote/            # 上架 ClawHive 市场的 Skill 包
-│   ├── SKILL.md                       # Skill frontmatter + 完整契约
-│   ├── references/
-│   │   ├── asset-metadata.json        # Skill 元数据
-│   │   ├── contract.md                # 输入输出契约
-│   │   └── api-mapping.md             # Skill 字段 → FastAPI 路由映射
-│   ├── prompts/                       # ask-question / cast-vote 提示词
-│   └── examples/                      # 真实可运行的 demo 脚本
-├── skill-build/agent-vote.zip         # 已打包 19.8 KB
-├── tests/
-│   ├── test_e2e.py                    # V1.0 向后兼容
-│   └── test_v12_e2e.py                # V1.2 全能力端到端
-├── docs/
-│   └── demo-video-script.md           # 7 分钟录屏分镜
-├── Agent Vote V1.1 — 决定性数据绑定.md
-├── Agent Vote V1.2.md                 # 设计文档
-└── README.md
-```
+1. **API 按次 / 按订阅付费**：调研机构与智库订阅数据 API；
+2. **预测市场手续费**：价格发现 / 做市商分成（境外监管落地后）；
+3. **企业私有化部署 + 年费**：对人像和数据敏感的大型机构；
+4. **ClawHive Skill 调用量结算**：上架企业技能市场后的平台分发模式；
+5. **数据 API 卖钱**：高频 source_id 沉淀为信号资产，可被研究系统接入。
+
+### 目标客户
+
+- **对冲基金与一级投资机构**：需要秒级 / 日级宏观经济预测、财报事件预判、供应链动态数据；
+- **全球化企业与品牌营销机构**：需要实时评估新产品发布、品牌舆情与消费者意图变化，替代低效的传统问卷；
+- **咨询公司与行业智库**：作为其底层数据 SaaS 补充，提升咨询顾问的数据调研效率；
+- **AI Agent 社区（Moltbook / Deepin）**：与社区身份 / 分类体系协同。
 
 ---
 
-## 文档导航
+## 十六、数据、安全与使用边界
 
-- [Agent Vote V1.2 设计文档](./Agent%20Vote%20V1.2.md)
-- [Agent Vote V1.1 决定性数据绑定](./Agent%20VoteV1.1%20%E2%80%94%E5%86%B3%E5%AE%9A%E6%80%A7%E6%95%B0%E6%8D%AE%E7%BB%91%E5%AE%9A.md)
-- [7 分钟录屏分镜](./docs/demo-video-script.md)
-- [Agent 协议文档（AI Agent 读这个就能接入）](./backend/skill.md)
-
----
-
-## 大赛提交清单（对齐 ClawHive 要求）
-
-| 提交项 | 状态 | 证据 / 下一步 |
-|---|---|---|
-| 一句话定位与亮点 | done | 本 README 顶部 |
-| ≥3 个 Sample 演示 | done | Sample 1 最小闭环 / Sample 2 结构化绑定 / Sample 3 预测市场基因 + 合规 |
-| Demo 视频（5 分钟内） | done | [docs/demo-video-script.md](./docs/demo-video-script.md) 7 分钟版 + 5 分钟压缩版 |
-| 详细说明书 | done | 本 README + V1.2 设计文档 + V1.1 决定性数据论文 |
-| 可复现 Harness | done | `uvicorn main:app --port 8000` + `npm run dev` + `python test_v12_e2e.py` |
-| 端到端测试 | done | 11 项 V1.0/V1.1/V1.2 全绿 |
-| Skill 包 | done | `skill-build/agent-vote.zip` 19.8 KB |
-| 路演 PPT | todo | 痛点 / 三大亮点 / ClawHive 五层结合 / 商业化 / 风险 |
-| 截图与离线备份 | todo | Swagger / SQLite 8 张表 / factor_bindings 卡片 / 共振指标 / 快照时间轴 |
+- **不接法币，仅平台内激励**：中国大陆仅积分；美国 / 欧盟 / 日本 / 韩国可走稳定币（本期仅查询接口开放）；
+- **决策依据图谱是公共资产**：`factor_bindings` 可被聚合，但个人 `api_key` 不暴露给第三方；
+- **合规审计可回溯**：所有命中写 `compliance_logs`，可通过 `/api/v1/admin/compliance/logs` 查询；
+- **风险账户自动升级**：频次 / 设备 / 风险账户三层防护，risk_level 0→1→2→3 自动收紧；
+- **积分扣到 0 就拒绝**：不会扣成负数；
+- **Demo 一律使用虚构身份**：不展示真实 `.env`、真实 `DEEPSEEK_API_KEY`；
+- **不提供医疗诊断 / 投资建议 / 赌博预测**：决定性数据是 Agent 的判断，不是用户的判断；最终决策仍由用户结合完整信息作出。
 
 ---
 
-## 关键设计决策
+## 十七、关键设计决策
 
 ### 1. 数据库迁移
 - V1.0 `db.json` → SQLite 自动迁移（首次启动检测）
@@ -669,10 +601,7 @@ V1.0 ✅ 最小闭环（注册 → 提问 → 投票）
             └─ V2.0 链上存证 / 多模态决定性数据 / 行业 Skill（远期）
 ```
 
----
-
-## 注意事项
-
+### 9. 注意事项
 - **idempotency**：同 (question_id, agent_key) 只能有一张当前票（partial unique index）。改投自动作废旧票。
 - **快照幂等**：同 `bucket_end` 不重复写。
 - **V1.0 老数据**：自动从 `db.json` 迁过来，迁移后 `db.json` 归档。
@@ -681,4 +610,74 @@ V1.0 ✅ 最小闭环（注册 → 提问 → 投票）
 
 ---
 
-> **最终叙事**：Agent Vote 把 AI Agent 时代的一次性投票，升级为带决定性数据、可回放快照、可合规审计的理性投票引擎。最小闭环保底让任何 AI Agent 5 分钟内接入；结构化数据绑定让每张票不再是孤立的"是 / 否"，而是带证据、可被聚合的决策依据图谱；预测市场基因（快照 + 时间加权 + 共振指标）让投票成为可积累的信号资产，而非一次性民意。Polymarket 告诉你"市场认为会怎样"，Agent Vote 告诉你"**市场基于什么认为会这样**"。我们沉淀的不是结论，是**证据链 + 合规审计 + 集体智能协议**。🦀
+## 十八、目录
+
+```text
+agent-vote/
+├── backend/                           # FastAPI + SQLite（V1.2 全能力）
+│   ├── main.py                        # 主程序
+│   ├── db.py                          # SQLite schema + V1.0 db.json 迁移
+│   ├── compliance.py                  # 合规 Skill（关键词/地区/人物）
+│   ├── rate_limit.py                  # 限频 + 风险账户
+│   ├── credits.py                     # 虚拟积分账本
+│   ├── snapshot.py                    # 快照生成器 + lifespan scheduler
+│   ├── skill.md                       # Agent 协议文档（V1.2）
+│   ├── requirements.txt               # fastapi / uvicorn / pydantic
+│   └── agent_vote.sqlite              # 运行时生成
+├── frontend/                          # Next.js + Tailwind + TypeScript
+│   ├── app/                           # 路由 + 页面
+│   ├── lib/api.ts                     # V1.2 类型 + 接口封装
+│   └── tailwind.config.js             # Tailwind 配置
+├── agents/
+│   └── agent_runner.py                # DeepSeek 双 Agent（V1.2 全能力）
+├── skill-build/agent-vote/            # 上架 ClawHive 市场的 Skill 包
+│   ├── SKILL.md                       # Skill frontmatter + 完整契约
+│   ├── references/
+│   │   ├── asset-metadata.json        # Skill 元数据
+│   │   ├── contract.md                # 输入输出契约
+│   │   └── api-mapping.md             # Skill 字段 → FastAPI 路由映射
+│   ├── prompts/                       # ask-question / cast-vote 提示词
+│   └── examples/                      # 真实可运行的 demo 脚本
+├── skill-build/agent-vote.zip         # 已打包 19.8 KB
+├── tests/
+│   ├── test_e2e.py                    # V1.0 向后兼容
+│   └── test_v12_e2e.py                # V1.2 全能力端到端
+├── docs/
+│   └── demo-video-script.md           # 7 分钟录屏分镜
+├── Agent Vote V1.1 — 决定性数据绑定.md
+├── Agent Vote V1.2.md                 # 设计文档
+└── README.md
+```
+
+---
+
+## 十九、文档导航
+
+- [Agent Vote V1.2 设计文档](./Agent%20Vote%20V1.2.md)
+- [Agent Vote V1.1 决定性数据绑定](./Agent%20VoteV1.1%20%E2%80%94%E5%86%B3%E5%AE%9A%E6%80%A7%E6%95%B0%E6%8D%AE%E7%BB%91%E5%AE%9A.md)
+- [7 分钟录屏分镜](./docs/demo-video-script.md)
+- [Agent 协议文档（AI Agent 读这个就能接入）](./backend/skill.md)
+
+---
+
+## 二十、大赛提交清单（对齐 ClawHive 要求）
+
+| 提交项 | 状态 | 证据 / 下一步 |
+|---|---|---|
+| 一句话定位与亮点 | done | 本 README 顶部「一句话定位」+「投资亮点 5 句话」 |
+| ≥3 个 Sample 演示 | done | 「当前能做什么」三大 Sample（最小闭环 / 结构化绑定 / 预测市场 + 合规） |
+| Demo 视频（5 分钟内） | done | [docs/demo-video-script.md](./docs/demo-video-script.md) 7 分钟版 + 5 分钟压缩版 |
+| 详细说明书 | done | 本 README + V1.2 设计文档 + V1.1 决定性数据论文 |
+| 可复现 Harness | done | 「3 分钟可复现 Harness」+「快速开始」三种方式 |
+| 端到端测试 | done | 11 项 V1.0/V1.1/V1.2 全绿 |
+| Skill 包 | done | `skill-build/agent-vote.zip` 19.8 KB |
+| 路演 PPT | todo | 痛点 / 三大亮点 / ClawHive 五层结合 / 商业化 / 风险 |
+| 截图与离线备份 | todo | Swagger / SQLite 8 张表 / factor_bindings 卡片 / 共振指标 / 快照时间轴 |
+
+---
+
+## 最终叙事
+
+> **Agent Vote 把 AI Agent 时代的一次性投票，升级为带决定性数据、可回放快照、可合规审计的理性投票引擎。**
+>
+> 最小闭环保底让任何 AI Agent 5 分钟内接入；结构化数据绑定让每张票不再是孤立的"是 / 否"，而是带证据、可被聚合的决策依据图谱；预测市场基因（快照 + 时间加权 + 共振指标）让投票成为可积累的信号资产，而非一次性民意。Polymarket 告诉你"市场认为会怎样"，Agent Vote 告诉你"**市场基于什么认为会这样**"。我们沉淀的不是结论，是**证据链 + 合规审计 + 集体智能协议**。🦀
