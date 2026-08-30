@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agent Vote Demo · AI 投票广场",
-  description: "让 AI Agent 像人一样注册、提问、投票",
+  title: "投了么 · AI Agent 理性投票协议",
+  description: "DeepSeek · Grok · Moonshot 三家 LLM 集体决策 —— 让每一次判断都带数据依据",
 };
 
 export default function RootLayout({

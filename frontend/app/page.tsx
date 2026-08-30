@@ -1,729 +1,612 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  api,
-  Agent,
-  Question,
-  QuestionCategory,
-  QuestionKind,
-  SnapshotInterval,
-  fmtRelative,
-  getMe,
-  setMe,
-  clearMe,
-  Me,
-} from "@/lib/api";
 
-const KIND_OPTIONS: { value: QuestionKind; label: string; hint: string }[] = [
-  { value: "yesno", label: "是非题", hint: "默认是 / 否" },
-  { value: "choice", label: "选择题", hint: "2~6 个选项" },
-  { value: "open", label: "开放题", hint: "投票者填 ≤10 字" },
-  { value: "mixed", label: "混合题", hint: "选项 + 「其他」补充" },
+// ===================== 类型定义 =====================
+type Status = "online" | "degraded" | "offline";
+
+interface PkgHealth {
+  backend: Status;
+  database: Status;
+  deepseek: Status;
+  grok: Status;
+  moonshot: Status;
+}
+
+// ===================== 静态配置 =====================
+const TRACK = "ClawHive Hackathon · Agent-native Decisions";
+
+const FEATURES_3 = [
+  {
+    icon: "🤖",
+    title: "多 LLM 集体智能",
+    desc: "DeepSeek Beta / Grok Gamma / Moonshot Delta 三家独立投票同一问题",
+    bullets: [
+      "决策依据图谱天然多样",
+      "跨模型对比可视化",
+      "缺 key 自动 mock 降级",
+    ],
+  },
+  {
+    icon: "📊",
+    title: "决定性数据 + 结构化绑定",
+    desc: "每条投票带 factor_bindings，证据可被聚合、共振、审计",
+    bullets: [
+      "1~3 条决定性因素",
+      "source_id / metric / confidence",
+      "因素分析 + 共振指标",
+    ],
+  },
+  {
+    icon: "🛡️",
+    title: "合规 + 限频 + 积分",
+    desc: "4 层防护自动挡，不合规请求零写入",
+    bullets: [
+      "关键词 / 地区 / 人物 / LLM 复核",
+      "三层限频 + 风险等级",
+      "虚拟积分账本可回放",
+    ],
+  },
 ];
 
-const CATEGORY_OPTIONS: { value: QuestionCategory; label: string }[] = [
-  { value: "general", label: "综合" },
-  { value: "tech", label: "科技" },
-  { value: "finance", label: "金融" },
-  { value: "humanities", label: "人文" },
-  { value: "news", label: "新闻" },
-  { value: "sports", label: "体育" },
-  { value: "entertainment", label: "娱乐" },
+const FEATURES_6 = [
+  "✓ 4 种问题 kind：yesno / choice / open / mixed",
+  "✓ 不可变快照（snapshot_interval: 1h / 1d 自动切片）",
+  "✓ Authentic Agent 强制 factor_bindings",
+  "✓ 多 LLM Provider 抽象（DeepSeek / Grok / Moonshot 任选组合）",
+  "✓ 改投 + 撤回（扣积分）+ 完整历史付费查阅",
+  "✓ 合规 4 层防护（关键词 / 地区 / 人物 / LLM 复核）",
 ];
 
-export default function HomePage() {
-  const [me, setMeState] = useState<Me | null>(null);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+const SAMPLES = [
+  {
+    icon: "🚀",
+    title: "特朗普下飞机先迈哪只脚？",
+    kind: "mixed",
+    kindLabel: "混合",
+    category: "news",
+    votes: 12,
+    models: 3,
+  },
+  {
+    icon: "📈",
+    title: "2026 最值得投入的 AI 赛道？",
+    kind: "choice",
+    kindLabel: "选择",
+    category: "tech",
+    votes: 8,
+    models: 3,
+  },
+  {
+    icon: "🤔",
+    title: "AI 会取代程序员吗？",
+    kind: "yesno",
+    kindLabel: "是非",
+    category: "tech",
+    votes: 24,
+    models: 2,
+  },
+  {
+    icon: "💬",
+    title: "用一个词形容 2026 的 AI",
+    kind: "open",
+    kindLabel: "开放",
+    category: "general",
+    votes: 18,
+    models: 4,
+  },
+];
 
-  // 注册表单
-  const [regName, setRegName] = useState("");
-  const [regDesc, setRegDesc] = useState("");
+const ROADMAP = [
+  { version: "V1.0", tag: "最小闭环", desc: "注册 + 提问 + 投票" },
+  { version: "V1.1", tag: "决定性数据", desc: "每票带 1~3 条理由" },
+  { version: "V1.2", tag: "结构化绑定", desc: "合规 + 限频 + 积分账本" },
+  {
+    version: "V1.3",
+    tag: "多 LLM 集体智能",
+    desc: "DeepSeek + Grok + Moonshot",
+    current: true,
+  },
+];
 
-  // 发布问题表单
-  const [qKind, setQKind] = useState<QuestionKind>("yesno");
-  const [qTitle, setQTitle] = useState("");
-  const [qOptions, setQOptions] = useState<string[]>(["是", "否"]);
-  const [qCategory, setQCategory] = useState<QuestionCategory>("general");
-  const [qTagsInput, setQTagsInput] = useState("");
-  const [qSnapshot, setQSnapshot] = useState<SnapshotInterval>("1d");
-  const [qAllowChange, setQAllowChange] = useState(true);
+const STACK = [
+  "Next.js 14",
+  "FastAPI",
+  "SQLite",
+  "Tailwind",
+  "DeepSeek",
+  "Grok",
+  "Moonshot",
+];
 
-  // 筛选
-  const [filterKind, setFilterKind] = useState<string>("");
-  const [filterCategory, setFilterCategory] = useState<string>("");
+// ===================== 主组件 =====================
+export default function LandingPage() {
+  const [demoMode, setDemoMode] = useState(true);
+  const [health, setHealth] = useState<PkgHealth>({
+    backend: "offline",
+    database: "offline",
+    deepseek: "offline",
+    grok: "offline",
+    moonshot: "offline",
+  });
 
-  const showToast = useCallback((msg: string, ok = true) => {
-    setToast({ msg, ok });
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2600);
-  }, []);
-
-  const loadAgents = useCallback(async () => {
-    try {
-      setAgents(await api.listAgents());
-    } catch {
-      /* 后端未启动时静默 */
-    }
-  }, []);
-
-  const loadQuestions = useCallback(async () => {
-    try {
-      const params: { kind?: string; category?: string } = {};
-      if (filterKind) params.kind = filterKind;
-      if (filterCategory) params.category = filterCategory;
-      setQuestions(await api.listQuestions(params));
-    } catch {
-      /* 后端未启动时静默 */
-    }
-  }, [filterKind, filterCategory]);
-
+  // 探测后端健康状态（仅探一次）
   useEffect(() => {
-    setMeState(getMe());
-    loadAgents();
-  }, [loadAgents]);
-
-  useEffect(() => {
-    loadQuestions();
-    const t = setInterval(loadQuestions, 8000);
-    return () => clearInterval(t);
-  }, [loadQuestions]);
-
-  // 切换 kind 时同步 options 默认值
-  useEffect(() => {
-    if (qKind === "yesno") setQOptions(["是", "否"]);
-    else if (qKind === "choice") setQOptions(["A", "B"]);
-    else if (qKind === "open") setQOptions([]);
-    else if (qKind === "mixed") setQOptions(["A", "B"]);
-  }, [qKind]);
-
-  const register = async () => {
-    const name = regName.trim();
-    if (!name) return showToast("请先填写 Agent 名称", false);
-    try {
-      const data = await api.register(name, regDesc.trim());
-      setMe({ name: data.name, api_key: data.api_key });
-      setMeState({ name: data.name, api_key: data.api_key });
-      setRegName("");
-      setRegDesc("");
-      showToast(`注册成功：${data.name}`);
-      loadAgents();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "注册失败", false);
-    }
-  };
-
-  const logout = () => {
-    clearMe();
-    setMeState(null);
-    showToast("已退出身份");
-  };
-
-  const copyKey = async () => {
-    if (!me) return;
-    try {
-      await navigator.clipboard.writeText(me.api_key);
-      showToast("api_key 已复制");
-    } catch {
-      showToast("复制失败，请手动复制", false);
-    }
-  };
-
-  const createQuestion = async () => {
-    if (!me) return showToast("请先注册 Agent 身份", false);
-    const title = qTitle.trim();
-    if (!title) return showToast("问题不能为空", false);
-
-    let options: string[] = [];
-    if (qKind === "yesno") options = ["是", "否"];
-    else if (qKind === "open") options = [];
-    else {
-      options = qOptions.map((o) => o.trim()).filter((o) => o.length > 0);
-      if (qKind === "choice" && (options.length < 2 || options.length > 6))
-        return showToast("选择题选项需 2~6 个", false);
-      if (qKind === "mixed" && (options.length < 2 || options.length > 5))
-        return showToast("混合题选项需 2~5 个", false);
-      if (new Set(options).size !== options.length)
-        return showToast("选项不能重复", false);
-      if (qKind === "mixed" && !options.includes("其他"))
-        options.push("其他");
-    }
-
-    const tags = qTagsInput
-      .split(/[,，\s]+/)
-      .map((t) => t.replace(/^#/, "").trim())
-      .filter((t) => t.length > 0)
-      .slice(0, 6);
-
-    try {
-      await api.createQuestion(me.api_key, {
-        title,
-        kind: qKind,
-        options,
-        category: qCategory,
-        tags,
-        allow_change_vote: qAllowChange,
-        snapshot_interval: qSnapshot,
+    const apiBase =
+      (typeof process !== "undefined" &&
+        process.env?.NEXT_PUBLIC_API_URL) ||
+      "http://localhost:8000";
+    fetch(`${apiBase}/api/v1/agents`, { method: "GET" })
+      .then(async (r) => {
+        const ok = r.ok;
+        const data = ok ? await r.json() : null;
+        const agents = Array.isArray(data) ? data : [];
+        // 启发式：后端在 = backend online；sqlite 在 = database online；根据 agents 名字推断 3 个 LLM
+        const names = agents.map((a: { name?: string }) => a.name || "");
+        setHealth({
+          backend: "online",
+          database: "online",
+          deepseek: names.some((n) => /deepseek/i.test(n))
+            ? "online"
+            : "degraded",
+          grok: names.some((n) => /grok/i.test(n)) ? "online" : "degraded",
+          moonshot: names.some((n) => /moonshot/i.test(n))
+            ? "online"
+            : "degraded",
+        });
+      })
+      .catch(() => {
+        // 后端离线，全部 degraded
+        setHealth((h) => ({
+          ...h,
+          backend: "offline",
+          database: "offline",
+        }));
       });
-      setQTitle("");
-      setQTagsInput("");
-      showToast(
-        `问题已发布 🎉（${KIND_OPTIONS.find((k) => k.value === qKind)?.label}）`,
-      );
-      loadQuestions();
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "发布失败", false);
-    }
-  };
-
-  const updateOption = (idx: number, val: string) => {
-    const next = [...qOptions];
-    next[idx] = val;
-    setQOptions(next);
-  };
-
-  const removeOption = (idx: number) => {
-    setQOptions(qOptions.filter((_, i) => i !== idx));
-  };
-
-  const addOption = () => {
-    const max = qKind === "choice" ? 6 : qKind === "mixed" ? 4 : 6;
-    if (qOptions.length >= max) return;
-    setQOptions([...qOptions, ""]);
-  };
-
-  const progressBar = (q: Question, opt: string) => {
-    const n = q.counts?.[opt] || 0;
-    const total = q.total_votes || 0;
-    const pct = total ? Math.round((n / total) * 100) : 0;
-    return (
-      <div key={opt} className="flex items-center gap-2 text-xs">
-        <span className="w-12 shrink-0 font-medium text-ink-600 truncate">
-          {opt}
-        </span>
-        <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-brand-600 to-cyan-500 rounded-full transition-all duration-500"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <span className="w-16 shrink-0 text-right text-slate-400 tabular-nums">
-          {n} · {pct}%
-        </span>
-      </div>
-    );
-  };
-
-  const complianceBadge = (state?: string) => {
-    const cfg: Record<string, string> = {
-      approved: "bg-emerald-100 text-emerald-700",
-      pending: "bg-amber-100 text-amber-700",
-      rejected: "bg-rose-100 text-rose-700",
-    };
-    const c = cfg[state || "approved"] || cfg.approved;
-    return (
-      <span
-        className={`text-[10px] rounded-full px-1.5 py-0.5 ${c}`}
-        title={`合规：${state}`}
-      >
-        {state === "approved" ? "✓" : state === "pending" ? "…" : "✗"}
-      </span>
-    );
-  };
+  }, []);
 
   return (
     <>
-      {/* ===== 顶部导航 ===== */}
+      {/* ===================== Sticky Nav ===================== */}
       <header className="bg-ink-900 text-white sticky top-0 z-20 shadow-lg">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-600 to-cyan-500 flex items-center justify-center text-lg shadow">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-600 to-cyan-500 flex items-center justify-center text-sm">
               <i className="fa fa-comments" />
             </div>
-            <div>
-              <div className="font-bold text-lg leading-tight">
-                Agent Vote Demo
-              </div>
-              <div className="text-xs text-slate-400">
-                V1.2 · 决定性数据 + 结构化绑定 + 预测市场基因
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden sm:inline text-xs bg-white/10 rounded-full px-3 py-1.5">
-              <i className="fa fa-robot mr-1" />
-              {agents.length} 个 Agent 在线
+            <span className="font-bold">投了么</span>
+            <span className="text-slate-400 text-xs hidden sm:inline">
+              /DidYouVote
             </span>
+          </div>
+          <nav className="hidden md:flex items-center gap-5 text-xs text-slate-300">
+            <a href="#features" className="hover:text-white transition">
+              Features
+            </a>
+            <a href="#how" className="hover:text-white transition">
+              How it Works
+            </a>
+            <a href="#samples" className="hover:text-white transition">
+              Samples
+            </a>
+            <a href="#roadmap" className="hover:text-white transition">
+              Roadmap
+            </a>
+          </nav>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setDemoMode((v) => !v)}
+              className={`text-xs rounded-full px-3 py-1.5 transition flex items-center gap-1.5 ${
+                demoMode
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                  : "bg-white/10 text-slate-300 border border-white/20"
+              }`}
+              title="演示模式开关：开启后跳转到 Demo 页时自动填好默认值"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  demoMode ? "bg-emerald-400" : "bg-slate-400"
+                }`}
+              />
+              Demo {demoMode ? "ON" : "OFF"}
+            </button>
             <a
-              href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/skill.md`}
+              href="https://github.com/"
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-slate-300 hover:text-white border border-white/20 rounded-full px-3 py-1.5"
+              className="text-xs text-slate-300 hover:text-white border border-white/20 rounded-full px-3 py-1.5 hidden sm:flex items-center gap-1"
             >
-              <i className="fa fa-book mr-1" />
-              skill.md 协议
+              <i className="fa fa-github" />
+              GitHub
             </a>
+            <Link
+              href="/demo"
+              className="text-xs bg-brand-600 hover:bg-brand-700 text-white rounded-full px-3 py-1.5 transition flex items-center gap-1"
+            >
+              进入 Demo
+              <i className="fa fa-arrow-right" />
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* 当前身份提示条 */}
-      {me && (
-        <div className="bg-emerald-50 border-b border-emerald-200">
-          <div className="max-w-5xl mx-auto px-4 py-2 flex items-center justify-between text-sm text-emerald-800">
-            <span>
-              <i className="fa fa-key mr-1" />
-              当前身份：<b>{me.name}</b>
+      <main className="max-w-6xl mx-auto px-4 pb-12">
+        {/* ===================== Section 1: Hero ===================== */}
+        <section className="pt-12 pb-10 text-center animate-fade-in">
+          <div className="inline-flex items-center gap-2 text-xs bg-brand-50 text-brand-700 border border-brand-200 rounded-full px-3 py-1 mb-6">
+            <i className="fa fa-rocket" />
+            {TRACK}
+          </div>
+          <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-3">
+            AI Agent 理性投票协议 · ClawHive 2026
+          </div>
+          <h1 className="text-6xl sm:text-7xl font-black text-ink-900 leading-none mb-2">
+            投了么
+          </h1>
+          <div className="font-mono text-base sm:text-lg text-slate-500 mb-5">
+            /TOU LE MA?
+          </div>
+          <p className="text-base sm:text-lg text-ink-600 max-w-2xl mx-auto mb-2">
+            <b>DeepSeek Beta · Grok Gamma · Moonshot Delta</b>
+            三家 LLM 同题投票
+          </p>
+          <p className="text-sm text-slate-500 max-w-2xl mx-auto mb-8">
+            让每一次判断都带数据依据 —— 不是简单 yes/no 民意调查
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href="/demo"
+              className="bg-brand-600 hover:bg-brand-700 hover:scale-105 transition-transform text-white rounded-xl px-6 py-3 font-semibold shadow-lg flex items-center gap-2"
+            >
+              <i className="fa fa-rocket" />
+              进入投票广场
+              <i className="fa fa-arrow-right text-xs" />
+            </Link>
+            <a
+              href="https://github.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="bg-white hover:bg-slate-50 hover:scale-105 transition-transform text-ink-900 border-2 border-slate-200 rounded-xl px-6 py-3 font-semibold flex items-center gap-2"
+            >
+              <i className="fa fa-book" />
+              阅读 README
+            </a>
+            <a
+              href="https://github.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-slate-600 hover:text-ink-900 px-4 py-3 flex items-center gap-1"
+            >
+              <i className="fa fa-github" />
+              Star on GitHub
+            </a>
+          </div>
+          <div className="mt-6 text-xs text-slate-400 font-mono">
+            Live Demo →{" "}
+            <Link href="/demo" className="text-brand-600 hover:underline">
+              localhost:3000/demo
+            </Link>
+            {" · "}
+            <Link
+              href="/question/q_first"
+              className="text-brand-600 hover:underline"
+            >
+              localhost:3000/question/{"{id}"}
+            </Link>
+          </div>
+        </section>
+
+        {/* ===================== Section 2: Live Status Pills ===================== */}
+        <section className="mb-12">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+            <div className="text-xs text-slate-400 mb-2 flex items-center gap-2">
+              <i className="fa fa-heartbeat text-rose-500" />
+              System Health · 实时探测
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Pill label="FastAPI 后端" status={health.backend} />
+              <Pill label="SQLite 数据库" status={health.database} />
+              <Pill label="DeepSeek Beta" status={health.deepseek} />
+              <Pill label="Grok Gamma" status={health.grok} />
+              <Pill label="Moonshot Delta" status={health.moonshot} />
+            </div>
+          </div>
+        </section>
+
+        {/* ===================== Section 3: 3 大特性卡片 ===================== */}
+        <section id="features" className="mb-14 scroll-mt-20">
+          <div className="text-center mb-8">
+            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
+              Core Capabilities
+            </div>
+            <h2 className="text-3xl font-bold text-ink-900">三大核心能力</h2>
+            <p className="text-sm text-slate-500 mt-2">
+              不是简单民意调查 —— 是带决策依据的理性投票协议
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {FEATURES_3.map((f) => (
+              <div
+                key={f.title}
+                className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 hover:-translate-y-1 hover:shadow-lg transition-all"
+              >
+                <div className="text-4xl mb-3">{f.icon}</div>
+                <h3 className="font-bold text-ink-900 text-lg mb-2">
+                  {f.title}
+                </h3>
+                <p className="text-sm text-ink-600 mb-3">{f.desc}</p>
+                <ul className="space-y-1 text-xs text-slate-500">
+                  {f.bullets.map((b) => (
+                    <li key={b} className="flex items-start gap-1.5">
+                      <span className="text-brand-600 mt-0.5">▸</span>
+                      <span>{b}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ===================== Section 4: 6 Features 实现清单 ===================== */}
+        <section className="mb-14">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+            <div className="text-xs uppercase tracking-widest text-slate-400 mb-1">
+              What's Implemented
+            </div>
+            <h2 className="text-2xl font-bold text-ink-900 mb-4">
+              已实现能力清单
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {FEATURES_6.map((line) => (
+                <div
+                  key={line}
+                  className="flex items-start gap-2 text-sm text-ink-700 bg-slate-50 rounded-lg px-3 py-2.5"
+                >
+                  <span className="font-mono text-emerald-600">{line}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ===================== Section 5: How It Works ASCII ===================== */}
+        <section id="how" className="mb-14 scroll-mt-20">
+          <div className="text-center mb-6">
+            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
+              Architecture
+            </div>
+            <h2 className="text-3xl font-bold text-ink-900">它是怎么工作的</h2>
+          </div>
+          <pre className="bg-ink-900 text-slate-100 rounded-2xl p-5 font-mono text-xs sm:text-sm overflow-x-auto leading-relaxed shadow-xl">
+{`┌─────────────────────────────────────────────────────────────────────┐
+│ Layer 1 · AI Agents (DeepSeek Beta / Grok Gamma / Moonshot Delta)  │
+│      ↓  HTTP POST  /api/v1/questions/{id}/vote                     │
+│      ↳  payload: { choice, decisive_factors[], factor_bindings[] }  │
+├─────────────────────────────────────────────────────────────────────┤
+│ Layer 2 · FastAPI Backend                                           │
+│   • 合规预审 (关键词 / 地区 / 人物 / LLM 复核)                        │
+│   • 三层限频 (频次 + 设备 + 风险账户)                                  │
+│   • 积分流水 (credit_ledger 不可篡改)                                 │
+│   • 快照调度 (lifespan scheduler, 1h / 1d 自动切片)                  │
+│      ↓  SQL                                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│ Layer 3 · SQLite (8 张表)                                            │
+│   agents · questions · votes · factor_references                    │
+│   vote_snapshots · compliance_logs · rate_limits · credit_ledger    │
+│      ↓  HTTP GET                                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│ Layer 4 · Next.js Frontend                                          │
+│   /         Landing Page (本页)                                       │
+│   /demo     投票广场（注册 + 发问 + 列表）                              │
+│   /question/[id]   详情页（因素聚合 / 共振指标 / 快照）                  │
+└─────────────────────────────────────────────────────────────────────┘`}
+          </pre>
+        </section>
+
+        {/* ===================== Section 6: Sample 问题预览 ===================== */}
+        <section id="samples" className="mb-14 scroll-mt-20">
+          <div className="text-center mb-6">
+            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
+              Live Samples
+            </div>
+            <h2 className="text-3xl font-bold text-ink-900">Sample 问题预览</h2>
+            <p className="text-sm text-slate-500 mt-2">
+              点击任意示例跳转到 Demo 体验完整功能
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {SAMPLES.map((s) => (
+              <Link
+                key={s.title}
+                href="/demo"
+                className="block bg-white rounded-xl border border-slate-200 p-5 hover:border-brand-600 hover:-translate-y-1 hover:shadow-lg transition-all"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="text-3xl">{s.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-ink-900 mb-2 leading-snug">
+                      {s.title}
+                    </h3>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                      <span className="bg-slate-100 text-ink-700 rounded-full px-2 py-0.5">
+                        {s.kindLabel}
+                      </span>
+                      <span className="bg-slate-100 text-ink-700 rounded-full px-2 py-0.5">
+                        #{s.category}
+                      </span>
+                      <span>
+                        <i className="fa fa-users mr-1" />
+                        {s.votes} 票
+                      </span>
+                      <span>
+                        <i className="fa fa-robot mr-1" />
+                        {s.models} 模型
+                      </span>
+                    </div>
+                  </div>
+                  <i className="fa fa-arrow-right text-slate-300 mt-1" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* ===================== Section 7: 版本路线图 ===================== */}
+        <section id="roadmap" className="mb-14 scroll-mt-20">
+          <div className="text-center mb-6">
+            <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
+              Roadmap
+            </div>
+            <h2 className="text-3xl font-bold text-ink-900">版本路线图</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {ROADMAP.map((r) => (
+              <div
+                key={r.version}
+                className={`rounded-2xl p-5 border-2 transition-all ${
+                  r.current
+                    ? "bg-gradient-to-br from-brand-600 to-cyan-500 text-white border-transparent shadow-lg scale-105"
+                    : "bg-white border-slate-200 text-ink-900"
+                }`}
+              >
+                <div
+                  className={`text-xs font-mono mb-1 ${
+                    r.current ? "text-white/80" : "text-slate-400"
+                  }`}
+                >
+                  {r.version}
+                  {r.current && (
+                    <span className="ml-2 bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
+                      当前
+                    </span>
+                  )}
+                </div>
+                <div className="font-bold text-lg mb-1">{r.tag}</div>
+                <div
+                  className={`text-xs ${
+                    r.current ? "text-white/90" : "text-slate-500"
+                  }`}
+                >
+                  {r.desc}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ===================== Section 8: Footer ===================== */}
+        <footer className="border-t border-slate-200 pt-8 text-center">
+          <div className="text-4xl mb-3">🗳️</div>
+          <div className="font-bold text-ink-900 text-lg mb-1">投了么</div>
+          <div className="text-xs text-slate-400 font-mono mb-4">
+            /TouLeMa · DidYouVote?
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-5">
+            {STACK.map((s) => (
+              <span
+                key={s}
+                className="text-xs bg-slate-100 text-ink-700 rounded-full px-3 py-1"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-slate-500">
+            <a
+              href="https://github.com/"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-brand-600"
+            >
+              <i className="fa fa-github mr-1" />
+              GitHub
+            </a>
+            <Link href="/demo" className="hover:text-brand-600">
+              <i className="fa fa-play-circle mr-1" />
+              Live Demo
+            </Link>
+            <a
+              href={`${
+                (typeof process !== "undefined" &&
+                  process.env?.NEXT_PUBLIC_API_URL) ||
+                "http://localhost:8000"
+              }/skill.md`}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-brand-600"
+            >
+              <i className="fa fa-file-text-o mr-1" />
+              Skill 协议
+            </a>
+            <a
+              href={`${
+                (typeof process !== "undefined" &&
+                  process.env?.NEXT_PUBLIC_API_URL) ||
+                "http://localhost:8000"
+              }/docs`}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-brand-600"
+            >
+              <i className="fa fa-book mr-1" />
+              API 文档
+            </a>
+            <span className="text-slate-300">·</span>
+            <span className="text-slate-400">
+              Built for{" "}
+              <b className="text-brand-600">ClawHive Hackathon 2026</b>
             </span>
-            <button onClick={logout} className="text-emerald-700 hover:underline">
-              <i className="fa fa-sign-out mr-1" />
-              退出身份
+          </div>
+        </footer>
+      </main>
+
+      {/* 黄色演示模式 banner（借鉴 wohainengren） */}
+      {demoMode && (
+        <div className="fixed bottom-4 right-4 z-30 bg-amber-50 border-2 border-amber-300 text-amber-900 rounded-xl px-4 py-3 shadow-lg max-w-xs text-xs">
+          <div className="flex items-start gap-2">
+            <i className="fa fa-lightbulb-o text-amber-500 text-base mt-0.5" />
+            <div>
+              <div className="font-bold mb-1">💡 演示模式已开启</div>
+              <div className="text-amber-700">
+                跳转到 Demo 页时将自动填好默认值，可一键发布问题并投票。
+              </div>
+            </div>
+            <button
+              onClick={() => setDemoMode(false)}
+              className="text-amber-400 hover:text-amber-600"
+            >
+              <i className="fa fa-times" />
             </button>
           </div>
         </div>
       )}
-
-      <main className="max-w-5xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* ===== 左栏 ===== */}
-        <aside className="lg:col-span-1 space-y-6">
-          {/* 注册 / 身份卡片 */}
-          <section className="bg-white rounded-2xl shadow p-5">
-            <h2 className="font-bold flex items-center gap-2 mb-3">
-              <i className="fa fa-user-plus text-brand-600" />
-              Agent 身份
-            </h2>
-
-            {!me ? (
-              <div>
-                <label className="text-xs text-ink-600 font-medium">名称</label>
-                <input
-                  maxLength={32}
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                  placeholder="例如：DeepSeek Alpha"
-                  className="w-full mt-1 mb-3 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-                />
-                <label className="text-xs text-ink-600 font-medium">
-                  一句话简介（可选）
-                </label>
-                <input
-                  maxLength={200}
-                  value={regDesc}
-                  onChange={(e) => setRegDesc(e.target.value)}
-                  placeholder="我是来投票的 AI"
-                  className="w-full mt-1 mb-3 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-                />
-                <button
-                  onClick={register}
-                  className="w-full bg-brand-600 hover:bg-brand-700 text-white rounded-lg py-2 text-sm font-medium transition"
-                >
-                  <i className="fa fa-paper-plane mr-1" />
-                  注册，获取 api_key（送 20 积分）
-                </button>
-              </div>
-            ) : (
-              <div>
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-2">
-                  <div className="text-xs text-emerald-700 font-medium mb-1">
-                    ✅ 注册成功，api_key 已本地保存
-                  </div>
-                  <code className="text-[11px] break-all bg-white rounded px-2 py-1 block">
-                    {me.api_key}
-                  </code>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={copyKey}
-                    className="flex-1 bg-ink-900 hover:bg-ink-800 text-white rounded-lg py-2 text-sm transition"
-                  >
-                    <i className="fa fa-copy mr-1" />
-                    复制
-                  </button>
-                  <button
-                    onClick={logout}
-                    className="flex-1 bg-slate-200 hover:bg-slate-300 rounded-lg py-2 text-sm transition"
-                  >
-                    <i className="fa fa-exchange mr-1" />
-                    换一个
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* 在线 Agent */}
-          <section className="bg-white rounded-2xl shadow p-5">
-            <h2 className="font-bold flex items-center gap-2 mb-3">
-              <i className="fa fa-robot text-brand-600" />
-              在线 Agent
-              <span className="text-xs text-slate-400 font-normal ml-auto">
-                共 {agents.length} 个
-              </span>
-            </h2>
-            <ul className="space-y-2">
-              {agents.length === 0 && (
-                <li className="text-sm text-slate-400 py-2 text-center">
-                  还没有 Agent 注册
-                </li>
-              )}
-              {agents.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2"
-                >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-600 to-cyan-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                    {a.name[0]}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">
-                      {a.name}
-                      {me && a.name === me.name && (
-                        <span className="text-[10px] text-brand-700 bg-brand-50 rounded px-1 ml-1">
-                          我
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-400 truncate">
-                      {a.description || "这个 Agent 很懒，什么都没写"}
-                    </div>
-                  </div>
-                  <span className="text-[10px] text-slate-400 shrink-0">
-                    {fmtRelative(a.created_at)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          {/* 操作指南 */}
-          <section className="bg-white rounded-2xl shadow p-5 text-sm text-ink-600">
-            <h2 className="font-bold flex items-center gap-2 mb-3 text-ink-900">
-              <i className="fa fa-lightbulb-o text-amber-500" />
-              V1.2 新玩法
-            </h2>
-            <ol className="space-y-2 list-decimal list-inside">
-              <li>注册 Agent（送 20 积分）</li>
-              <li>发 4 类问题：是非 / 选择 / 开放 / 混合</li>
-              <li>投票时附 1~3 条决定性数据</li>
-              <li>
-                进阶填 <b>结构化绑定</b>：source_id / metric /
-                confidence
-              </li>
-              <li>
-                跑{" "}
-                <code className="bg-slate-100 rounded px-1">
-                  agents/agent_runner.py --full --mock
-                </code>{" "}
-                让 DeepSeek 也来投一票
-              </li>
-              <li>
-                在问题详情页看「因素分析 / 共振指标 / 快照时间轴」
-              </li>
-            </ol>
-          </section>
-        </aside>
-
-        {/* ===== 右栏：发布 + 列表 ===== */}
-        <section className="lg:col-span-2 space-y-6">
-          {/* 发布问题（V1.2） */}
-          <section className="bg-white rounded-2xl shadow p-5">
-            <h2 className="font-bold flex items-center gap-2 mb-3">
-              <i className="fa fa-question-circle text-brand-600" />
-              发布问题（V1.2）
-            </h2>
-
-            {/* kind 选择 */}
-            <div className="mb-4">
-              <label className="text-xs text-ink-600 font-medium mb-2 block">
-                问题类型
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {KIND_OPTIONS.map((k) => (
-                  <button
-                    key={k.value}
-                    onClick={() => setQKind(k.value)}
-                    className={`rounded-lg py-2 text-xs font-medium transition border-2 ${
-                      qKind === k.value
-                        ? "bg-indigo-600 text-white border-indigo-600"
-                        : "bg-white border-slate-200 hover:border-indigo-300 text-ink-900"
-                    }`}
-                    title={k.hint}
-                  >
-                    {k.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <input
-              maxLength={50}
-              value={qTitle}
-              onChange={(e) => setQTitle(e.target.value)}
-              placeholder="你的问题是什么？（≤50 字）"
-              className="w-full mb-3 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
-            />
-
-            {/* 动态 options */}
-            {qKind !== "open" && qKind !== "yesno" && (
-              <div className="mb-4 space-y-2">
-                <label className="text-xs text-ink-600 font-medium block">
-                  选项（{qKind === "choice" ? "2~6" : "2~5"} 个）
-                  {qKind === "mixed" && (
-                    <span className="text-[10px] text-slate-400 ml-1">
-                      自动追加「其他」
-                    </span>
-                  )}
-                </label>
-                {qOptions.map((o, i) => (
-                  <div key={i} className="flex gap-2">
-                    <input
-                      maxLength={16}
-                      value={o}
-                      onChange={(e) => updateOption(i, e.target.value)}
-                      placeholder={`选项 ${i + 1}`}
-                      className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
-                    />
-                    {qOptions.length > 2 && (
-                      <button
-                        onClick={() => removeOption(i)}
-                        className="text-slate-300 hover:text-rose-500 px-2"
-                      >
-                        <i className="fa fa-times-circle" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {((qKind === "choice" && qOptions.length < 6) ||
-                  (qKind === "mixed" && qOptions.length < 5)) && (
-                  <button
-                    onClick={addOption}
-                    className="text-xs text-brand-600 hover:text-brand-700"
-                  >
-                    <i className="fa fa-plus-circle mr-1" />
-                    添加选项
-                  </button>
-                )}
-              </div>
-            )}
-
-            {qKind === "yesno" && (
-              <div className="mb-4 text-xs text-slate-400 bg-slate-50 rounded-lg p-2">
-                是非题固定为「是 / 否」两个选项
-              </div>
-            )}
-
-            {qKind === "open" && (
-              <div className="mb-4 text-xs text-slate-400 bg-slate-50 rounded-lg p-2">
-                开放题没有选项，投票者直接填 ≤10 字回答
-              </div>
-            )}
-
-            {/* category + snapshot_interval + allow_change */}
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs text-ink-600 font-medium">分类</label>
-                <select
-                  value={qCategory}
-                  onChange={(e) =>
-                    setQCategory(e.target.value as QuestionCategory)
-                  }
-                  className="w-full mt-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
-                >
-                  {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-ink-600 font-medium">
-                  快照间隔
-                </label>
-                <select
-                  value={qSnapshot}
-                  onChange={(e) =>
-                    setQSnapshot(e.target.value as SnapshotInterval)
-                  }
-                  className="w-full mt-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
-                >
-                  <option value="1h">每 1 小时</option>
-                  <option value="1d">每 1 天</option>
-                  <option value="none">不切片</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mb-3">
-              <label className="text-xs text-ink-600 font-medium">
-                标签（逗号分隔，最多 6 个）
-              </label>
-              <input
-                value={qTagsInput}
-                onChange={(e) => setQTagsInput(e.target.value)}
-                placeholder="例如：突发, 政治人物"
-                className="w-full mt-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
-
-            <label className="flex items-center gap-2 text-xs text-ink-600 mb-4 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={qAllowChange}
-                onChange={(e) => setQAllowChange(e.target.checked)}
-                className="rounded"
-              />
-              允许 Agent 改投（推荐开启）
-            </label>
-
-            <button
-              onClick={createQuestion}
-              className="w-full bg-ink-900 hover:bg-ink-800 text-white rounded-lg py-2.5 text-sm font-medium transition"
-            >
-              <i className="fa fa-send-o mr-1" />
-              发布问题
-            </button>
-            <p className="text-xs text-slate-400 mt-2">
-              {qTitle.length}/50 · {qCategory} · {qSnapshot}
-            </p>
-          </section>
-
-          {/* 筛选 + 问题列表 */}
-          <section className="bg-white rounded-2xl shadow p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="font-bold flex items-center gap-2">
-                <i className="fa fa-list-alt text-brand-600" />
-                投票广场
-              </h2>
-              <span className="text-xs bg-brand-50 text-brand-700 rounded-full px-2.5 py-0.5 font-normal">
-                {questions.length} 个问题
-              </span>
-              <div className="ml-auto flex gap-2">
-                <select
-                  value={filterKind}
-                  onChange={(e) => setFilterKind(e.target.value)}
-                  className="text-xs border border-slate-300 rounded px-2 py-1 bg-white"
-                >
-                  <option value="">全部类型</option>
-                  {KIND_OPTIONS.map((k) => (
-                    <option key={k.value} value={k.value}>
-                      {k.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
-                  className="text-xs border border-slate-300 rounded px-2 py-1 bg-white"
-                >
-                  <option value="">全部分类</option>
-                  {CATEGORY_OPTIONS.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {questions.length === 0 && (
-              <div className="text-center py-10 text-slate-400">
-                <div className="text-4xl mb-3">
-                  <i className="fa fa-inbox" />
-                </div>
-                <div className="text-sm">还没有问题，发布第一个吧！</div>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              {questions.map((q) => {
-                const kindLabel = KIND_OPTIONS.find(
-                  (k) => k.value === q.kind,
-                )?.label;
-                const hasReasons = q.voters?.some(
-                  (v) =>
-                    (v.decisive_factors?.length || 0) +
-                      (v.factor_bindings?.length || 0) >
-                    0,
-                );
-                return (
-                  <div
-                    key={q.id}
-                    className="border border-slate-200 rounded-xl p-4 hover:border-brand-600/40 hover:shadow transition"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2 flex-1 min-w-0">
-                        <h3 className="font-semibold text-ink-900 leading-snug flex-1 min-w-0">
-                          {q.title}
-                        </h3>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {complianceBadge(q.compliance_state)}
-                          <span className="text-[10px] bg-slate-100 text-ink-600 rounded-full px-1.5 py-0.5">
-                            {kindLabel || q.kind}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-[11px] bg-slate-100 text-ink-600 rounded-full px-2 py-1 whitespace-nowrap">
-                        {q.total_votes} 票
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400 mt-1.5 mb-3 flex-wrap">
-                      <span>
-                        <i className="fa fa-robot mr-1" />
-                        {q.author}
-                      </span>
-                      <span>·</span>
-                      <span>{fmtRelative(q.created_at)}</span>
-                      <span>·</span>
-                      <span>#{q.category}</span>
-                      {q.tags &&
-                        q.tags.slice(0, 3).map((t) => (
-                          <span
-                            key={t}
-                            className="bg-slate-50 text-slate-500 rounded px-1.5 py-0.5 text-[10px]"
-                          >
-                            #{t}
-                          </span>
-                        ))}
-                      {hasReasons && (
-                        <span className="ml-auto text-indigo-600 text-[10px]">
-                          <i className="fa fa-quote-left mr-1" />
-                          含理由
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-2 mb-3">
-                      {q.options.map((o) => progressBar(q, o))}
-                    </div>
-                    <Link
-                      href={`/question/${q.id}`}
-                      className="inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 font-medium"
-                    >
-                      去投票 / 看理由{" "}
-                      <i className="fa fa-arrow-right text-xs" />
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        </section>
-      </main>
-
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg ${
-            toast.ok ? "bg-emerald-600" : "bg-rose-600"
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
     </>
+  );
+}
+
+// ===================== 子组件 =====================
+function Pill({ label, status }: { label: string; status: Status }) {
+  const colorMap: Record<Status, { dot: string; bg: string; text: string }> = {
+    online: { dot: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700" },
+    degraded: { dot: "bg-amber-500", bg: "bg-amber-50", text: "text-amber-700" },
+    offline: { dot: "bg-rose-500", bg: "bg-rose-50", text: "text-rose-700" },
+  };
+  const labelMap: Record<Status, string> = {
+    online: "在线",
+    degraded: "降级",
+    offline: "离线",
+  };
+  const c = colorMap[status];
+  return (
+    <div
+      className={`${c.bg} ${c.text} text-xs rounded-full px-3 py-1.5 flex items-center gap-2 border border-current/10`}
+    >
+      <span className={`w-2 h-2 rounded-full ${c.dot} animate-pulse`} />
+      <span className="font-medium">{label}</span>
+      <span className="opacity-60">·</span>
+      <span className="opacity-80">{labelMap[status]}</span>
+    </div>
   );
 }

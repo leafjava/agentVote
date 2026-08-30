@@ -1,12 +1,12 @@
-# Agent Vote 冠军级 Demo 视频脚本：AI Agent 理性投票 × 决定性数据 × 预测市场基因
+# 投了么 (TouLeMa) 冠军级 Demo 视频脚本：AI Agent 理性投票 × 决定性数据 × 预测市场基因
 
 参考：仓库根目录 [README.md](../README.md)、[Agent Vote V1.2.md](../Agent%20Vote%20V1.2.md)、[Agent Vote V1.1 — 决定性数据绑定.md](../Agent%20Vote%20V1.1%20%E2%80%94%20%E5%86%B3%E5%AE%9A%E6%80%A7%E6%95%B0%E6%8D%AE%E7%BB%91%E5%AE%9A.md)、[backend/skill.md](../backend/skill.md)、[project.md](../project.md)。
 
-这版脚本用于正式录屏/现场路演：主线不再是"投票页面展示"，而是展示 Agent Vote 已经把"AI Agent 提问 → 决定性数据 → 动态投票 → 快照 → 合规 → 限频 → 积分"做成一条可运行的预测市场基因引擎。
+这版脚本用于正式录屏/现场路演：主线不再是"投票页面展示"，而是展示投了么（TouLeMa，原 Agent Vote）已经把"AI Agent 提问 → 决定性数据 → 动态投票 → 快照 → 合规 → 限频 → 积分"做成一条可运行的预测市场基因引擎。
 
 一句话主线：
 
-> Agent Vote 用 FastAPI + SQLite + DeepSeek 双 Agent，把"两个身份注册 → 提问 → 决定性数据绑定 → 改投撤回 → 快照回放 → 合规审计"做成 AI Agent 时代的理性投票平台。
+> 投了么用 FastAPI + SQLite + DeepSeek + Grok + Moonshot 多 LLM，把"两个身份注册 → 提问 → 决定性数据绑定 → 改投撤回 → 快照回放 → 合规审计"做成 AI Agent 时代的理性投票平台。
 
 推荐时长：6–7 分钟。  
 推荐展示方式：现场稳定时优先展示 FastAPI live path（`/docs` Swagger + SQLite + agent_runner.py 真实跑）；`tests/test_v12_e2e.py` 作为 100% 稳定的端到端黄金路径兜底。  
@@ -69,16 +69,18 @@ npm run dev
 
 网页上展示什么：
 
-打开 `http://localhost:3000/`，停在 hero 区域。镜头扫过：
+打开 `http://localhost:3000/`，停在 **Landing Page** hero 区域（页面自动展示项目介绍）。镜头扫过：
 
-- "Agent Vote —— 预测市场化的动态投票与多类型问题引擎"
-- "两个 Agent 注册 → 一个提问 → 一个回答 → 实时统计"
-- "DeepSeek 负责『想』出问题和立场，FastAPI 负责『管』身份与票数"
-- V1.2 关键能力速览表
+- "投了么 (TouLeMa) —— AI Agent 时代的多 LLM 集体决策协议"
+- Track badge："ClawHive Hackathon · Agent-native Decisions"
+- Live Status Pills：FastAPI 后端 / SQLite / DeepSeek Beta / Grok Gamma / Moonshot Delta 健康状态
+- 三大特性卡片：多 LLM 集体智能 / 决定性数据 + 结构化绑定 / 合规 + 限频 + 积分
+- 已实现能力清单（6 条）
+- Sample 问题预览（4 条硬编码示例）
 
 建议口播：
 
-大家好，我们是 Agent Vote 团队。
+大家好，我们是投了么（TouLeMa）团队，项目原名 Agent Vote，现正式更名为投了么。
 
 Agent Vote 是面向 AI Agent 社区、调研机构、预测市场和开放社区的"理性投票 + 决定性数据 + 预测市场基因"引擎。今天我展示的不是一个静态表单，而是一条 live workflow：FastAPI 后端、SQLite 数据库、DeepSeek 双 Agent、Swagger 接口、scheduler 自动快照会连成一条完整路径。
 
@@ -433,11 +435,11 @@ TEST_BASE_URL=http://127.0.0.1:8000 python test_v12_e2e.py
 
 网页上展示什么：
 
-回到首页 hero，停在"Agent Vote —— 预测市场化的动态投票与多类型问题引擎"。
+回到 Landing Page hero，停在"投了么 (TouLeMa) —— AI Agent 时代的多 LLM 集体决策协议"。
 
 建议口播��
 
-一句话总结：**Agent Vote 把 AI Agent 时代的一次性投票，升级为带决定性数据、可回放快照、可合规审计的理性投票引擎。**
+一句话总结：**投了么把 AI Agent 时代的一次性投票，升级为带决定性数据、可回放快照、可合规审计的理性投票引擎。**
 
 我们用 FastAPI + SQLite 解决了协议可信问题，用 DeepSeek 双 Agent 解决了决定性数据生成问题，用决定性数据 + 结构化绑定解决了"为什么是这个结果"问题，用改投撤回 + 快照解决了过程可回放问题，用合规 Skill + 限频 + 积分解决了合规可审计问题。谢谢各位评委。
 
@@ -466,7 +468,7 @@ TEST_BASE_URL=http://127.0.0.1:8000 python test_v12_e2e.py
 
 ## 视频里一定要说出的 10 句话
 
-1. Agent Vote 不是聊天机器人，也不是简单民意调查，而是 AI Agent 时代的理性投票引擎。
+1. 投了么不是聊天机器人，也不是简单民意调查，而是 AI Agent 时代的理性投票引擎。
 2. 我们实现的是"注册 → 提问 → 决定性数据 → 动态投票 → 快照 → 合规 → 积分"的全链路。
 3. FastAPI + SQLite 承载真实 Agent、问题、投票、快照、合规、限频和积分账本。
 4. V1.0 最小闭环（注册 → 提问 → 是/否 → 统计）完全向后兼容，老客户端无感升级。

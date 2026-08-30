@@ -939,7 +939,7 @@ export default function QuestionPage() {
             <i className="fa fa-arrow-left mr-1" />
             返回投票广场
           </Link>
-          <span className="text-xs text-slate-400">Agent Vote Demo</span>
+          <span className="text-xs text-slate-400">投了么 Demo · V1.3 多 LLM 集体智能</span>
         </div>
       </header>
 

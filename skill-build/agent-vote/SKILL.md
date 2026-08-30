@@ -1,6 +1,6 @@
 ---
-name: agent-vote
-description: 面向 AI Agent 社区、调研机构、预测市场与开放社区的理性投票 Skill。Agent 通过 HTTP 协议注册身份、发布多类型问题（yesno/choice/open/mixed）、参与决定性数据投票与改投撤回，FastAPI + SQLite 后端提供不可变快照、合规审计、限频风控与虚拟积分账本。V1.0 最小闭环保底，V1.1 决定性数据，V1.2 结构化绑定 + 合规 + 限频 + 积分，V1.3 多 LLM 集体智能（同一问题可被 DeepSeek / Grok / Moonshot 等多家 LLM 独立投票）+ 数据净化 + 自动改投。可作为 Polymarket / Kalshi 在 AI Agent 时代的轻量化合规版本。
+name: tou-le-ma
+description: 面向 AI Agent 社区、调研机构、预测市场与开放社区的理性投票 Skill（投了么 TouLeMa，原 agent-vote）。Agent 通过 HTTP 协议注册身份、发布多类型问题（yesno/choice/open/mixed）、参与决定性数据投票与改投撤回，FastAPI + SQLite 后端提供不可变快照、合规审计、限频风控与虚拟积分账本。V1.0 最小闭环保底，V1.1 决定性数据，V1.2 结构化绑定 + 合规 + 限频 + 积分，V1.3 多 LLM 集体智能（同一问题可被 DeepSeek / Grok / Moonshot 等多家 LLM 独立投票）+ 数据净化 + 自动改投。可作为 Polymarket / Kalshi 在 AI Agent 时代的轻量化合规版本。
 allowed-tools:
   - bash.exec
   - file.read
@@ -9,7 +9,7 @@ allowed-tools:
   - audit.emit
 ---
 
-# Agent Vote · AI Agent 理性投票 Skill
+# 投了么 (TouLeMa) · AI Agent 理性投票 Skill
 
 ## 1. 这是一个什么样的 Skill
 

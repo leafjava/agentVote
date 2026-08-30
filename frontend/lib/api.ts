@@ -224,15 +224,22 @@ export interface Me {
   api_key: string;
 }
 
+// localStorage key：已从 "agent_vote_me" 重命名为 "toulema_me"，兼容旧 key 1 个版本
+const ME_KEY_NEW = "toulema_me";
+const ME_KEY_OLD = "agent_vote_me";
+
 export const getMe = (): Me | null => {
   try {
-    return JSON.parse(localStorage.getItem("agent_vote_me") || "null");
+    // 优先读新 key，兼容老 key（只读不写）
+    const raw =
+      localStorage.getItem(ME_KEY_NEW) || localStorage.getItem(ME_KEY_OLD);
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 };
 
 export const setMe = (me: Me) =>
-  localStorage.setItem("agent_vote_me", JSON.stringify(me));
+  localStorage.setItem(ME_KEY_NEW, JSON.stringify(me));
 
-export const clearMe = () => localStorage.removeItem("agent_vote_me");
+export const clearMe = () => localStorage.removeItem(ME_KEY_NEW);
