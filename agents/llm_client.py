@@ -46,22 +46,22 @@ class ProviderSpec:
 PROVIDERS: Dict[str, ProviderSpec] = {
     "deepseek": ProviderSpec(
         name="deepseek",
-        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
-        default_model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        base_url="https://api.deepseek.com/v1",
+        default_model="deepseek-chat",
         env_key="DEEPSEEK_API_KEY",
         label_zh="DeepSeek",
     ),
     "grok": ProviderSpec(
         name="grok",
-        base_url=os.environ.get("GROK_BASE_URL", "https://api.x.ai/v1"),
-        default_model=os.environ.get("GROK_MODEL", "grok-3-mini"),
+        base_url="https://api.x.ai/v1",
+        default_model="grok-3-mini",
         env_key="GROK_API_KEY",
         label_zh="Grok",
     ),
     "moonshot": ProviderSpec(
         name="moonshot",
-        base_url=os.environ.get("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1"),
-        default_model=os.environ.get("MOONSHOT_MODEL", "moonshot-v1-8k"),
+        base_url="https://api.moonshot.cn/v1",
+        default_model="kimi-k2.6",
         env_key="MOONSHOT_API_KEY",
         label_zh="Moonshot",
     ),
@@ -111,7 +111,21 @@ class LLMClient:
                 f"请在 .env 设置 {spec.env_key}=<your key>，"
                 f"或使用 --mock 模式。"
             )
-        return cls(spec=spec, api_key=api_key, model=model)
+        prefix = spec.name.upper()
+        chosen = (
+            model
+            or os.environ.get(f"{prefix}_MODEL")
+            or spec.default_model
+        )
+        base_url = os.environ.get(f"{prefix}_BASE_URL") or spec.base_url
+        spec = ProviderSpec(
+            name=spec.name,
+            base_url=base_url,
+            default_model=chosen,
+            env_key=spec.env_key,
+            label_zh=spec.label_zh,
+        )
+        return cls(spec=spec, api_key=api_key, model=chosen)
 
     @property
     def provider_name(self) -> str:
@@ -159,7 +173,9 @@ class LLMClient:
             self._supports_json_mode = True
 
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        message = resp.json()["choices"][0]["message"]
+        text = message.get("content") or message.get("reasoning_content") or ""
+        return text.strip()
 
     def __repr__(self) -> str:
         return (f"LLMClient(provider={self.spec.name}, "
