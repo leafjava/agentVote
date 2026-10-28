@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "投了么 · AI Agent 理性投票协议",
-  description: "DeepSeek · Grok · Moonshot 三家 LLM 集体决策 —— 让每一次判断都带数据依据",
+  title: "ACILES Agent Vote · 预测表决",
+  description:
+    "ACILES 的预测表决层：专业 AI Agent 对市场议题带证据投票，输出可更新的决策包。",
 };
 
 export default function RootLayout({

@@ -43,6 +43,8 @@ export default function DemoPage() {
   // 注册表单
   const [regName, setRegName] = useState("");
   const [regDesc, setRegDesc] = useState("");
+  const [regCategory, setRegCategory] = useState<QuestionCategory>("finance");
+  const [showKey, setShowKey] = useState(false);
 
   // 发布问题表单
   const [qKind, setQKind] = useState<QuestionKind>("yesno");
@@ -110,7 +112,7 @@ export default function DemoPage() {
     const name = regName.trim();
     if (!name) return showToast("请先填写 Agent 名称", false);
     try {
-      const data = await api.register(name, regDesc.trim());
+      const data = await api.register(name, regDesc.trim(), regCategory);
       setMe({ name: data.name, api_key: data.api_key });
       setMeState({ name: data.name, api_key: data.api_key });
       setRegName("");
@@ -293,16 +295,16 @@ export default function DemoPage() {
             </div>
             <div>
               <div className="font-bold text-lg leading-tight flex items-center gap-2">
-                投了么 Demo
+                表决台
                 <Link
                   href="/"
                   className="text-[10px] text-slate-400 hover:text-white border border-white/20 rounded-full px-2 py-0.5 font-normal"
                 >
-                  ← 返回首页
+                  ← 返回介绍
                 </Link>
               </div>
               <div className="text-xs text-slate-400">
-                V1.3 · 多 LLM 集体智能 + 决定性数据 + 结构化绑定
+                ACILES · Agent Vote · 带证据的预测表决
               </div>
             </div>
           </div>
@@ -357,9 +359,23 @@ export default function DemoPage() {
                   maxLength={32}
                   value={regName}
                   onChange={(e) => setRegName(e.target.value)}
-                  placeholder="例如：DeepSeek Alpha"
+                  placeholder="例如：区域宏观研判"
                   className="w-full mt-1 mb-3 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 />
+                <label className="text-xs text-ink-600 font-medium">领域</label>
+                <select
+                  value={regCategory}
+                  onChange={(e) =>
+                    setRegCategory(e.target.value as QuestionCategory)
+                  }
+                  className="w-full mt-1 mb-3 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                >
+                  {CATEGORY_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
                 <label className="text-xs text-ink-600 font-medium">
                   一句话简介（可选）
                 </label>
@@ -367,7 +383,7 @@ export default function DemoPage() {
                   maxLength={200}
                   value={regDesc}
                   onChange={(e) => setRegDesc(e.target.value)}
-                  placeholder="我是来投票的 AI"
+                  placeholder="例如：宏观与区域资本市场"
                   className="w-full mt-1 mb-3 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
                 />
                 <button
@@ -385,8 +401,16 @@ export default function DemoPage() {
                     ✅ 注册成功，api_key 已本地保存
                   </div>
                   <code className="text-[11px] break-all bg-white rounded px-2 py-1 block">
-                    {me.api_key}
+                    {showKey
+                      ? me.api_key
+                      : `${me.api_key.slice(0, 7)}…${me.api_key.slice(-4)}`}
                   </code>
+                  <button
+                    onClick={() => setShowKey((v) => !v)}
+                    className="text-[11px] text-emerald-700 mt-2 hover:underline"
+                  >
+                    {showKey ? "收起密钥" : "展开密钥"}
+                  </button>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -441,7 +465,13 @@ export default function DemoPage() {
                       )}
                     </div>
                     <div className="text-xs text-slate-400 truncate">
-                      {a.description || "这个 Agent 很懒，什么都没写"}
+                      {CATEGORY_OPTIONS.find((c) => c.value === a.category)
+                        ?.label || "综合"}
+                      {typeof a.credit_balance === "number"
+                        ? ` · ${a.credit_balance} 积分`
+                        : ""}
+                      {a.is_authentic ? " · Authentic" : ""}
+                      {a.description ? ` · ${a.description}` : ""}
                     </div>
                   </div>
                   <span className="text-[10px] text-slate-400 shrink-0">
@@ -456,26 +486,13 @@ export default function DemoPage() {
           <section className="bg-white rounded-2xl shadow p-5 text-sm text-ink-600">
             <h2 className="font-bold flex items-center gap-2 mb-3 text-ink-900">
               <i className="fa fa-lightbulb-o text-amber-500" />
-              V1.3 新玩法
+              介绍时的四步
             </h2>
             <ol className="space-y-2 list-decimal list-inside">
-              <li>注册 Agent（送 20 积分）</li>
-              <li>发 4 类问题：是非 / 选择 / 开放 / 混合</li>
-              <li>投票时附 1~3 条决定性数据</li>
-              <li>
-                进阶填 <b>结构化绑定</b>：source_id / metric /
-                confidence
-              </li>
-              <li>
-                跑{" "}
-                <code className="bg-slate-100 rounded px-1">
-                  agents/agent_runner.py --full
-                </code>{" "}
-                让 DeepSeek Beta / Grok Gamma / Moonshot Delta 三家 LLM 同时投票
-              </li>
-              <li>
-                在问题详情页看「因素分析 / 共振指标 / 快照时间轴」
-              </li>
+              <li>注册一个带领域的 Agent</li>
+              <li>发一条会到期的市场或产业议题</li>
+              <li>投票时写上决定性因素和来源</li>
+              <li>打开详情，先看决策包，再看分歧和快照</li>
             </ol>
           </section>
         </aside>
@@ -486,7 +503,7 @@ export default function DemoPage() {
           <section className="bg-white rounded-2xl shadow p-5">
             <h2 className="font-bold flex items-center gap-2 mb-3">
               <i className="fa fa-question-circle text-brand-600" />
-              发布问题（V1.3）
+              发布议题
             </h2>
 
             {/* kind 选择 */}
@@ -516,7 +533,7 @@ export default function DemoPage() {
               maxLength={50}
               value={qTitle}
               onChange={(e) => setQTitle(e.target.value)}
-              placeholder="你的问题是什么？（≤50 字）"
+              placeholder="例如：下季区域半导体资本开支是否上修？"
               className="w-full mb-3 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent"
             />
 
@@ -618,7 +635,7 @@ export default function DemoPage() {
               <input
                 value={qTagsInput}
                 onChange={(e) => setQTagsInput(e.target.value)}
-                placeholder="例如：突发, 政治人物"
+                placeholder="例如：半导体, 资本开支, 东盟"
                 className="w-full mt-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
               />
             </div>
@@ -688,7 +705,7 @@ export default function DemoPage() {
                 <div className="text-4xl mb-3">
                   <i className="fa fa-inbox" />
                 </div>
-                <div className="text-sm">还没有问题，发布第一个吧！</div>
+                <div className="text-sm">还没有议题。发一条市场或产业问题即可开始。</div>
               </div>
             )}
 
@@ -777,7 +794,7 @@ export default function DemoPage() {
                       href={`/question/${q.id}`}
                       className="inline-flex items-center gap-1 text-sm text-brand-600 hover:text-brand-700 font-medium"
                     >
-                      去投票 / 看理由{" "}
+                      查看决策包与依据{" "}
                       <i className="fa fa-arrow-right text-xs" />
                     </Link>
                   </div>

@@ -58,6 +58,10 @@ export interface Agent {
   description: string;
   created_at: number;
   key_prefix: string;
+  category?: QuestionCategory | string;
+  is_authentic?: boolean;
+  credit_balance?: number;
+  credit_score?: number;
 }
 
 export interface Voter {
@@ -183,8 +187,15 @@ const authPost = (apiKey: string, body?: unknown): RequestInit => ({
 export const api = {
   // Agent
   listAgents: () => req<Agent[]>("/api/v1/agents"),
-  register: (name: string, description: string) =>
-    req<RegisterResult>("/api/v1/agents/register", json({ name, description })),
+  register: (
+    name: string,
+    description: string,
+    category: QuestionCategory = "general",
+  ) =>
+    req<RegisterResult>(
+      "/api/v1/agents/register",
+      json({ name, description, category }),
+    ),
   me: (apiKey: string) => req<unknown>("/api/v1/agents/me", authGet(apiKey)),
 
   // Question

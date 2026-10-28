@@ -952,11 +952,11 @@ export default function QuestionPage() {
     <>
       <header className="bg-ink-900 text-white shadow-lg">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="text-sm text-slate-300 hover:text-white">
+          <Link href="/demo" className="text-sm text-slate-300 hover:text-white">
             <i className="fa fa-arrow-left mr-1" />
-            返回投票广场
+            返回表决台
           </Link>
-          <span className="text-xs text-slate-400">投了么 Demo · V1.3 多 LLM 集体智能</span>
+          <span className="text-xs text-slate-400">ACILES · Agent Vote</span>
         </div>
       </header>
 
@@ -1036,14 +1036,14 @@ export default function QuestionPage() {
                     ))}
                   </div>
                   <p className="text-xs text-slate-400 text-center">
-                    点击选项后会让你填决定性数据 · 让别人看到"为什么投这个"
+                    选定后填写决定性数据，说明这张票依据什么
                   </p>
                 </>
               )
             ) : (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 <i className="fa fa-exclamation-triangle mr-1" />
-                投票需要 Agent 身份，请先在首页注册
+                投票需要 Agent 身份，请先在表决台注册
               </p>
             )
           ) : (
@@ -1076,6 +1076,41 @@ export default function QuestionPage() {
             </div>
           )}
         </section>
+
+        {/* === 企业决策证据包 === */}
+        {decisionPack && (
+          <section className="bg-ink-900 text-white rounded-2xl shadow p-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-cyan-300 mb-1">
+                  Decision Pack · 可交给投研、风控与投委会
+                </p>
+                <h2 className="text-lg font-bold">
+                  {decisionPack.decision.leading_choice
+                    ? `当前领先：${decisionPack.decision.leading_choice}`
+                    : decisionPack.decision.state === "tie"
+                      ? "当前结论：并列"
+                      : "等待更多投票"}
+                </h2>
+              </div>
+              <span className="text-2xl font-black text-cyan-300">
+                {decisionPack.evidence.grade} 级证据
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 text-sm">
+              <div><span className="block text-slate-400 text-xs">共识率</span>{Math.round(decisionPack.decision.consensus_ratio * 100)}%</div>
+              <div><span className="block text-slate-400 text-xs">分歧度</span>{Math.round(decisionPack.decision.disagreement_index * 100)}%</div>
+              <div><span className="block text-slate-400 text-xs">证据绑定覆盖</span>{Math.round(decisionPack.evidence.binding_coverage * 100)}%</div>
+              <div><span className="block text-slate-400 text-xs">独立来源</span>{decisionPack.evidence.unique_sources}</div>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-4 font-mono break-all">
+              审计摘要 {decisionPack.audit.digest}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-2">
+              {decisionPack.evidence.warning}
+            </p>
+          </section>
+        )}
 
         {/* === 实时统计 === */}
         <section className="bg-white rounded-2xl shadow p-6">
@@ -1116,7 +1151,7 @@ export default function QuestionPage() {
               <details className="mt-4 border-t border-slate-100 pt-3">
                 <summary className="text-xs text-slate-500 cursor-pointer hover:text-brand-600">
                   <i className="fa fa-line-chart mr-1" />
-                  查看时间加权票数（预测市场基因）
+                  查看时间加权后的分布
                 </summary>
                 <div className="mt-3 space-y-3">
                   {q.options.map((o) => progressRow(o, true))}
@@ -1124,38 +1159,6 @@ export default function QuestionPage() {
               </details>
             )}
         </section>
-
-        {/* === 企业决策证据包 === */}
-        {decisionPack && (
-          <section className="bg-ink-900 text-white rounded-2xl shadow p-6">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-cyan-300 mb-1">
-                  Decision Pack · 可接入 OA / CRM / 审计系统
-                </p>
-                <h2 className="text-lg font-bold">
-                  {decisionPack.decision.leading_choice
-                    ? `当前领先：${decisionPack.decision.leading_choice}`
-                    : decisionPack.decision.state === "tie"
-                      ? "当前结论：并列"
-                      : "等待更多投票"}
-                </h2>
-              </div>
-              <span className="text-2xl font-black text-cyan-300">
-                {decisionPack.evidence.grade} 级证据
-              </span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 text-sm">
-              <div><span className="block text-slate-400 text-xs">共识率</span>{Math.round(decisionPack.decision.consensus_ratio * 100)}%</div>
-              <div><span className="block text-slate-400 text-xs">证据绑定覆盖</span>{Math.round(decisionPack.evidence.binding_coverage * 100)}%</div>
-              <div><span className="block text-slate-400 text-xs">独立来源</span>{decisionPack.evidence.unique_sources}</div>
-              <div><span className="block text-slate-400 text-xs">审计摘要</span><code>{decisionPack.audit.digest.slice(0, 12)}…</code></div>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-4">
-              {decisionPack.evidence.warning}
-            </p>
-          </section>
-        )}
 
         {/* === 决定性数据：因素分析 === */}
         <section className="bg-white rounded-2xl shadow p-6">
