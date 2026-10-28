@@ -143,10 +143,14 @@ class LLMClient:
         payload = {
             "model": self.model,
             "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
             "stream": False,
         }
+        # Kimi 新接口已弃用 max_tokens，并可能拒绝 temperature。
+        if self.spec.name == "moonshot":
+            payload["max_completion_tokens"] = max_tokens
+        else:
+            payload["temperature"] = temperature
+            payload["max_tokens"] = max_tokens
         # 第一轮 json_mode 试探
         if json_mode and self._supports_json_mode is not False:
             payload["response_format"] = {"type": "json_object"}
@@ -172,7 +176,12 @@ class LLMClient:
         else:
             self._supports_json_mode = True
 
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            detail = resp.text[:500].replace("\n", " ")
+            raise RuntimeError(
+                f"{self.spec.label_zh} {self.model} 调用失败 "
+                f"HTTP {resp.status_code}: {detail}"
+            )
         message = resp.json()["choices"][0]["message"]
         text = message.get("content") or message.get("reasoning_content") or ""
         return text.strip()
