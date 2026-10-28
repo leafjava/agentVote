@@ -1,5 +1,7 @@
-// API 封装：与 backend/main.py 的 V1.2 接口对齐
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// 留空时请求当前网站自身的 /api。线上由 Nginx 转到 8000，本地由 next.config.mjs 转发。
+// 只有页面和接口不在同一地址时，才在环境变量里写完整后端地址。
+export const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const API = API_BASE;
 
 // ---------------- 类型定义 ----------------
 export type QuestionKind = "yesno" | "choice" | "open" | "mixed";

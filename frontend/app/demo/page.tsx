@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  API_BASE,
   api,
   Agent,
   Question,
@@ -314,7 +315,7 @@ export default function DemoPage() {
               {agents.length} 个 Agent 在线
             </span>
             <a
-              href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/skill.md`}
+              href={`${API_BASE}/skill.md`}
               target="_blank"
               rel="noreferrer"
               className="text-xs text-slate-300 hover:text-white border border-white/20 rounded-full px-3 py-1.5"

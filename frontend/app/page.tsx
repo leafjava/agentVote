@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { API_BASE } from "@/lib/api";
 
 const STEPS = [
   {
@@ -122,9 +123,7 @@ export default function LandingPage() {
   const [backendUp, setBackendUp] = useState(false);
 
   useEffect(() => {
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    fetch(`${apiBase}/healthz`)
+    fetch(`${API_BASE}/healthz`)
       .then((r) => setBackendUp(r.ok))
       .catch(() => setBackendUp(false));
   }, []);
